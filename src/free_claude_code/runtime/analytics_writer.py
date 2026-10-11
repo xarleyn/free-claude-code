@@ -29,6 +29,11 @@ from free_claude_code.core.json_types import JsonObject
 
 _BATCH_LIMIT = 64
 _QUEUE_LIMIT = 2048
+# Upper bound on waiting for the worker to leave its current batch. Shutdown must not
+# block behind a database that stopped answering; Uvicorn bounds HTTP draining, not the
+# application lifespan, so this wait is the only limit on that path.
+_WORKER_EXIT_SECONDS = 2.0
+
 
 class RequestBuffer:
     """One in-flight logical request plus the attempts it has produced so far."""
@@ -85,15 +90,29 @@ class AnalyticsWriter:
         )
 
     async def close(self) -> None:
-        """Flush everything still buffered, then stop the worker."""
+        """Stop the worker, then flush whatever it left behind.
+
+        The worker parks on the wake-up event as soon as the queue drains, so it has to be
+        woken here: awaiting it without a wake-up waits for a submit that can never arrive.
+        Both waits are bounded, because a stuck database must not be able to hang shutdown.
+        """
 
         self._closed = True
-        worker = self._worker
+        worker, self._worker = self._worker, None
         if worker is not None:
-            with contextlib.suppress(asyncio.CancelledError):
-                await worker
-            self._worker = None
-        await self._flush()
+            self._wakeup.set()
+            _, pending = await asyncio.wait({worker}, timeout=_WORKER_EXIT_SECONDS)
+            if pending:
+                for task in pending:
+                    task.cancel()
+                await asyncio.gather(*pending, return_exceptions=True)
+                logger.warning(
+                    "Analytics writer was still flushing after {}s; its batch is "
+                    "abandoned and the remaining queue is written from shutdown.",
+                    _WORKER_EXIT_SECONDS,
+                )
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(self._flush(), timeout=_WORKER_EXIT_SECONDS)
 
     # ---------------------------------------------------------------- intake
 

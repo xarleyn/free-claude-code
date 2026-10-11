@@ -1,5 +1,7 @@
 """Writer, retention and idempotency of usage accounting."""
 
+import asyncio
+
 import pytest
 
 from free_claude_code.application.analytics.models import (
@@ -199,3 +201,42 @@ def test_retention_windows() -> None:
     store = AnalyticsStore(None)
     assert store.durable is False
 
+
+@pytest.mark.asyncio
+async def test_close_wakes_a_worker_that_already_went_idle() -> None:
+    """Shutdown must not wait for a submit that can never arrive."""
+
+    store = RecordingStore()
+    writer = AnalyticsWriter(store)
+    writer.start()
+    writer.submit(writer.track(_request("req-idle")))
+    for _ in range(5):
+        await asyncio.sleep(0.01)
+    assert not writer._queued_ids and not writer._worker.done()
+
+    await asyncio.wait_for(writer.close(), timeout=1)
+
+    assert [record.request_id for record in store.requests] == ["req-idle"]
+    assert writer._worker is None
+
+
+@pytest.mark.asyncio
+async def test_close_returns_when_storage_stops_answering(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stuck database may delay shutdown, never hold it open."""
+
+    class StuckStore(RecordingStore):
+        async def upsert_request(self, record: LogicalRequestRecord) -> None:
+            await asyncio.sleep(3600)
+
+    monkeypatch.setattr(
+        "free_claude_code.runtime.analytics_writer._WORKER_EXIT_SECONDS", 0.05
+    )
+    writer = AnalyticsWriter(StuckStore())
+    writer.start()
+    writer.submit(writer.track(_request("req-stuck")))
+    for _ in range(5):
+        await asyncio.sleep(0.01)
+
+    await asyncio.wait_for(writer.close(), timeout=1)
