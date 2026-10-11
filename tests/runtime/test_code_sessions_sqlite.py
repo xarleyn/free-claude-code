@@ -555,6 +555,7 @@ async def test_version_one_database_gains_mode_without_losing_history(
         connection.execute("ALTER TABLE code_runs DROP COLUMN mode")
         connection.execute("DROP INDEX code_prompts_active")
         drop_messaging_schema(connection)
+        drop_free_guard_analytics_schema(connection)
         connection.execute("PRAGMA user_version = 1")
     for _ in range(2):
         store = SQLiteCodeStore(
@@ -568,7 +569,7 @@ async def test_version_one_database_gains_mode_without_losing_history(
         assert saved_run is not None and saved_run.mode == "config"
         assert await store.items(session.id, None, None) == items
         with closing(sqlite3.connect(tmp_path / "code.db")) as connection:
-            assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
+            assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
             with pytest.raises(sqlite3.IntegrityError):
                 connection.execute("UPDATE code_sessions SET mode = 'unknown'")
             with pytest.raises(sqlite3.IntegrityError):
@@ -590,6 +591,7 @@ async def test_version_two_database_gains_nullable_context_usage(
         connection.execute("ALTER TABLE code_sessions DROP COLUMN context_used_tokens")
         connection.execute("DROP INDEX code_prompts_active")
         drop_messaging_schema(connection)
+        drop_free_guard_analytics_schema(connection)
         connection.execute("PRAGMA user_version = 2")
     for _ in range(2):
         store = SQLiteCodeStore(
@@ -598,7 +600,7 @@ async def test_version_two_database_gains_nullable_context_usage(
         await store.start()
         assert (await store.get_session(session.id)).context_used_tokens is None
         with closing(sqlite3.connect(tmp_path / "code.db")) as connection:
-            assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
+            assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
             column = next(
                 row
                 for row in connection.execute("PRAGMA table_info(code_sessions)")
@@ -904,6 +906,7 @@ async def _legacy_prompt_database(store, path):
         connection.execute("ALTER TABLE code_sessions DROP COLUMN context_used_tokens")
         connection.execute("ALTER TABLE code_runs DROP COLUMN mode")
         drop_messaging_schema(connection)
+        drop_free_guard_analytics_schema(connection)
         connection.execute("PRAGMA user_version = 0")
         for prompt in prompts:
             connection.execute(
@@ -965,7 +968,7 @@ async def test_legacy_prompts_migrate_once_to_run_ends_without_resequencing(
             )
             assert saved[prompt.id] == expected
         with closing(sqlite3.connect(path)) as connection:
-            assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
+            assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
             assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
             assert any(
                 row[2] == "code_items"
@@ -1022,5 +1025,24 @@ def drop_messaging_schema(connection):
         "messaging_trees",
         "messaging_managed_messages",
         "messaging_legacy_import",
+    ):
+        connection.execute(f"DROP TABLE {table}")
+
+
+def drop_free_guard_analytics_schema(connection):
+    """Reduce a current database to a historical Code-only one.
+
+    FreeGuard evidence and analytics accounting live in the same file, so a
+    historical fixture built from a live database has to drop them too before it can
+    claim an older schema version.
+    """
+
+    for table in (
+        "upstream_attempts",
+        "logical_requests",
+        "eligibility_audit",
+        "pricing_snapshots",
+        "model_eligibility",
+        "analytics_daily_rollups",
     ):
         connection.execute(f"DROP TABLE {table}")

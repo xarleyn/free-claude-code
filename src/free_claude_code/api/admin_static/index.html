@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="/admin/assets/__FCC_VERSION__/admin.css" />
     <link rel="stylesheet" href="/admin/assets/__FCC_VERSION__/code_sessions.css" />
     <link rel="stylesheet" href="/admin/assets/__FCC_VERSION__/session_layout.css" />
+    <link rel="stylesheet" href="/admin/assets/__FCC_VERSION__/analytics.css" />
   </head>
   <body>
     <div class="app-shell">
@@ -211,6 +212,134 @@
             </dialog>
           </section>
 
+          <section id="view-analytics" class="admin-view" data-view="analytics" hidden>
+            <div class="form-sections" aria-label="Usage analytics">
+              <section class="settings-section" aria-labelledby="analyticsHeading">
+                <div class="section-heading">
+                  <div>
+                    <h3 id="analyticsHeading">Analytics</h3>
+                    <p>Local request, token and cost accounting. Metadata only &mdash; no prompts, no responses, no credentials.</p>
+                  </div>
+                  <div class="integration-actions">
+                    <button id="analyticsRefresh" class="secondary-button" type="button">Refresh</button>
+                    <button id="analyticsExport" class="secondary-button" type="button">Export</button>
+                    <label class="analytics-toolbar">
+                      <span class="analytics-visually-hidden">Export format</span>
+                      <select id="analyticsFormat" aria-label="Export format">
+                        <option value="json">JSON</option>
+                        <option value="csv">CSV</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="analytics-toolbar">
+                  <div class="analytics-periods">
+                    <label class="field">
+                      <span>Period</span>
+                      <select id="analyticsRange">
+                        <option value="1h">Last hour</option>
+                        <option value="24h" selected>Last 24 hours</option>
+                        <option value="7d">Last 7 days</option>
+                        <option value="30d">Last 30 days</option>
+                      </select>
+                    </label>
+                    <label class="analytics-inline-check">
+                      <input id="analyticsIncludeProbes" type="checkbox" />
+                      Include health probes
+                    </label>
+                  </div>
+                </div>
+
+                <div class="analytics-filters">
+                  <label class="field">
+                    <span>Provider</span>
+                    <input id="analyticsProvider" type="text" placeholder="e.g. groq" autocomplete="off" data-1p-ignore data-bwignore data-form-type="other" />
+                  </label>
+                  <label class="field">
+                    <span>Model</span>
+                    <input id="analyticsModel" type="text" placeholder="e.g. llama-3.3-70b" autocomplete="off" data-1p-ignore data-bwignore data-form-type="other" />
+                  </label>
+                  <label class="field">
+                    <span>Client</span>
+                    <select id="analyticsClient">
+                      <option value="">All clients</option>
+                      <option value="claude_code">Claude Code</option>
+                      <option value="codex">Codex</option>
+                      <option value="vscode_chat">VS Code Chat</option>
+                      <option value="dsh">DeepSeek Harness</option>
+                      <option value="opencode">OpenCode</option>
+                      <option value="browser">Browser</option>
+                      <option value="unknown">Unknown</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>Status</span>
+                    <select id="analyticsStatus">
+                      <option value="">All statuses</option>
+                      <option value="success">Success</option>
+                      <option value="error">Error</option>
+                      <option value="blocked">Blocked</option>
+                      <option value="canceled">Canceled</option>
+                      <option value="partial_stream">Partial stream</option>
+                    </select>
+                  </label>
+                </div>
+
+                <dl id="analyticsKpis" class="analytics-stats" aria-live="polite"></dl>
+                <p class="analytics-note">
+                  One client request may produce several downstream attempts, so request and
+                  attempt counts differ by design. Token usage a provider did not report is
+                  counted as unknown, never as zero.
+                </p>
+
+                <div id="analyticsChart" class="analytics-chart-frame" aria-live="polite"></div>
+
+                <h4>Request history</h4>
+                <div id="analyticsRequests"></div>
+
+                <h4>Request trace</h4>
+                <div id="analyticsTrace"></div>
+              </section>
+            </div>
+          </section>
+
+          <section id="view-free-models" class="admin-view" data-view="free-models" hidden>
+            <div class="form-sections" aria-label="Free model eligibility">
+              <section class="settings-section" aria-labelledby="freeModelsHeading">
+                <div class="section-heading">
+                  <div>
+                    <h3 id="freeModelsHeading">Free Models</h3>
+                    <p>Which models are confirmed free without a card, top-up or subscription, and why the rest are blocked.</p>
+                  </div>
+                  <div class="integration-actions">
+                    <button id="freeGuardRefresh" class="secondary-button" type="button">Refresh prices &amp; eligibility</button>
+                  </div>
+                </div>
+
+                <div class="analytics-filters">
+                  <label class="field">
+                    <span>Search</span>
+                    <input id="freeGuardSearch" type="search" placeholder="provider or model" autocomplete="off" data-1p-ignore data-bwignore data-form-type="other" />
+                  </label>
+                  <label class="field">
+                    <span>Provider</span>
+                    <input id="freeGuardProvider" type="text" placeholder="e.g. groq" autocomplete="off" data-1p-ignore data-bwignore data-form-type="other" />
+                  </label>
+                </div>
+
+                <dl id="freeGuardSummary" class="analytics-stats" aria-live="polite"></dl>
+                <p class="analytics-note">
+                  A zero price does not prove a model is free without a card. Unknown models are
+                  blocked in strict mode, and a manual attestation is the only way to make one
+                  eligible.
+                </p>
+
+                <div id="freeGuardModels"></div>
+              </section>
+            </div>
+          </section>
+
           <section id="view-code" class="admin-view" data-view="code" hidden>
             <div id="codeRoot" class="code-root session-root" aria-live="off"></div>
           </section>
@@ -248,6 +377,7 @@
     <script src="/admin/assets/__FCC_VERSION__/model_combobox.js"></script>
     <script src="/admin/assets/__FCC_VERSION__/session_ui.js"></script>
     <script src="/admin/assets/__FCC_VERSION__/code_sessions.js"></script>
+    <script src="/admin/assets/__FCC_VERSION__/analytics.js"></script>
     <script src="/admin/assets/__FCC_VERSION__/admin.js"></script>
   </body>
 </html>

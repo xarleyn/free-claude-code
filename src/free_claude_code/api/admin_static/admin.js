@@ -55,6 +55,20 @@ const VIEW_GROUPS = [
     containerId: "view-integrations",
   },
   {
+    id: "analytics",
+    label: "Analytics",
+    title: "Analytics",
+    sections: [],
+    containerId: "view-analytics",
+  },
+  {
+    id: "free-models",
+    label: "Free Models",
+    title: "Free Models",
+    sections: [],
+    containerId: "view-free-models",
+  },
+  {
     id: "code",
     label: "Code sessions",
     title: "Code sessions",
@@ -268,7 +282,11 @@ function setActiveView(viewId, { scroll = false } = {}) {
   document.querySelector(".app-shell").classList.toggle("session-active", sessionActive);
   document.querySelector(".main").classList.toggle("session-main", sessionActive);
   document.querySelector(".topbar").hidden = sessionActive;
-  document.querySelector(".action-bar").hidden = sessionActive || activeView.id === "integrations";
+  document.querySelector(".action-bar").hidden =
+    sessionActive ||
+    activeView.id === "integrations" ||
+    activeView.id === "analytics" ||
+    activeView.id === "free-models";
 
   document.querySelectorAll(".nav-link").forEach((link) => {
     const selected = link.dataset.view === activeView.id;
@@ -291,6 +309,8 @@ function setActiveView(viewId, { scroll = false } = {}) {
   }
   if (activeView.id === "code") window.CodeSessions.activate(window.location.pathname);
   else window.CodeSessions.deactivate();
+  if (activeView.id === "analytics") window.Analytics?.activate();
+  if (activeView.id === "free-models") window.Analytics?.activateFreeGuard();
   if (activeView.id === "integrations") {
     refreshClaudeIntegration();
     refreshVSCodeChatIntegration();
@@ -1222,7 +1242,8 @@ function showCredentialErrors(checks) {
 function setApplying(applying) {
   state.applying = applying;
   VIEW_GROUPS.filter((view) => view.id !== "code").forEach((view) => {
-    byId(`view-${view.id}`).inert = applying || !!state.restart;
+    const section = byId(`view-${view.id}`);
+    if (section) section.inert = applying || !!state.restart;
   });
   if (applying) state.modelComboboxes.forEach((combobox) => combobox.close());
   byId("providerDialogBody").inert = applying || !!state.restart;

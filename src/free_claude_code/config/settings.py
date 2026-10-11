@@ -14,6 +14,7 @@ from pydantic import (
 
 from .constants import DEFAULT_MODEL, HTTP_CONNECT_TIMEOUT_DEFAULT
 from .custom_providers import CustomProviderDefinition, decode_custom_providers
+from .free_guard import FreeGuardMode, parse_free_guard_mode
 from .model_refs import parse_model_fallbacks
 from .nim import NimSettings
 from .provider_catalog import (
@@ -745,6 +746,97 @@ class Settings(BaseModel):
     # ==================== NIM Settings ====================
     nim: NimSettings = Field(default_factory=NimSettings)
 
+    # ==================== FreeGuard ====================
+    # How strongly FCC restricts which models may be called at all.
+    #   off                 - no new restrictions (legacy behaviour)
+    #   catalog_filter_only - hide unconfirmed models in pickers, still allow direct ids
+    #   strict_free_only    - deny-by-default before every upstream call
+    # The default is ``off`` so existing configurations keep working; strict free
+    # routing is opt-in from Admin. See docs/architecture-decisions.
+    free_guard_mode: FreeGuardMode = Field(
+        default=FreeGuardMode.OFF,
+        validation_alias="FCC_FREE_GUARD_MODE",
+    )
+    free_guard_allow_local_models: bool = Field(
+        default=True,
+        validation_alias="FCC_FREE_GUARD_ALLOW_LOCAL_MODELS",
+    )
+    free_guard_require_no_card: bool = Field(
+        default=True,
+        validation_alias="FCC_FREE_GUARD_REQUIRE_NO_CARD",
+    )
+    free_guard_require_no_topup: bool = Field(
+        default=True,
+        validation_alias="FCC_FREE_GUARD_REQUIRE_NO_TOPUP",
+    )
+    free_guard_require_no_subscription: bool = Field(
+        default=True,
+        validation_alias="FCC_FREE_GUARD_REQUIRE_NO_SUBSCRIPTION",
+    )
+    free_guard_allow_trials: bool = Field(
+        default=False,
+        validation_alias="FCC_FREE_GUARD_ALLOW_TRIALS",
+    )
+    free_guard_allow_promotional_credits: bool = Field(
+        default=False,
+        validation_alias="FCC_FREE_GUARD_ALLOW_PROMOTIONAL_CREDITS",
+    )
+    free_guard_allow_manual_approval: bool = Field(
+        default=True,
+        validation_alias="FCC_FREE_GUARD_ALLOW_MANUAL_APPROVAL",
+    )
+    free_guard_eligibility_ttl_hours: int = Field(
+        default=24,
+        ge=1,
+        le=24 * 30,
+        validation_alias="FCC_FREE_GUARD_ELIGIBILITY_TTL_HOURS",
+    )
+    free_guard_block_when_evidence_stale: bool = Field(
+        default=True,
+        validation_alias="FCC_FREE_GUARD_BLOCK_WHEN_EVIDENCE_STALE",
+    )
+
+    # ==================== Analytics ====================
+    # Local request/usage accounting. Stores no prompts, responses or credentials.
+    analytics_enabled: bool = Field(
+        default=True,
+        validation_alias="FCC_ANALYTICS_ENABLED",
+    )
+    analytics_retention_days: int = Field(
+        default=90,
+        ge=1,
+        le=3650,
+        validation_alias="FCC_ANALYTICS_RETENTION_DAYS",
+    )
+    analytics_rollup_retention_days: int = Field(
+        default=365,
+        ge=1,
+        le=3650,
+        validation_alias="FCC_ANALYTICS_ROLLUP_RETENTION_DAYS",
+    )
+    analytics_collect_attempt_level: bool = Field(
+        default=True,
+        validation_alias="FCC_ANALYTICS_COLLECT_ATTEMPT_LEVEL",
+    )
+    analytics_persist_prompts: bool = Field(
+        default=False,
+        validation_alias="FCC_ANALYTICS_PERSIST_PROMPTS",
+    )
+    analytics_persist_responses: bool = Field(
+        default=False,
+        validation_alias="FCC_ANALYTICS_PERSIST_RESPONSES",
+    )
+    analytics_export_enabled: bool = Field(
+        default=True,
+        validation_alias="FCC_ANALYTICS_EXPORT_ENABLED",
+    )
+    analytics_dashboard_refresh_seconds: int = Field(
+        default=15,
+        ge=5,
+        le=600,
+        validation_alias="FCC_ANALYTICS_DASHBOARD_REFRESH_SECONDS",
+    )
+
     # ==================== Voice Note Transcription ====================
     voice_note_enabled: bool = Field(
         default=True, validation_alias="VOICE_NOTE_ENABLED"
@@ -824,6 +916,17 @@ class Settings(BaseModel):
         if value is ReasoningPreference.INHERIT:
             raise ValueError("REASONING_POLICY cannot inherit")
         return value
+
+    @field_validator("free_guard_mode", mode="before")
+    @classmethod
+    def validate_free_guard_mode(cls, v: object) -> object:
+        if v is None or v == "":
+            return FreeGuardMode.OFF
+        if isinstance(v, FreeGuardMode):
+            return v
+        if isinstance(v, str):
+            return parse_free_guard_mode(v)
+        return v
 
     @field_validator("whisper_device")
     @classmethod

@@ -84,6 +84,28 @@ WEB_FIELDS = (
     "web_fetch_allowed_schemes",
     "web_fetch_allow_private_networks",
 )
+FREE_GUARD_FIELDS = (
+    "free_guard_mode",
+    "free_guard_allow_local_models",
+    "free_guard_require_no_card",
+    "free_guard_require_no_topup",
+    "free_guard_require_no_subscription",
+    "free_guard_allow_trials",
+    "free_guard_allow_promotional_credits",
+    "free_guard_allow_manual_approval",
+    "free_guard_eligibility_ttl_hours",
+    "free_guard_block_when_evidence_stale",
+)
+ANALYTICS_FIELDS = (
+    "analytics_enabled",
+    "analytics_retention_days",
+    "analytics_rollup_retention_days",
+    "analytics_collect_attempt_level",
+    "analytics_persist_prompts",
+    "analytics_persist_responses",
+    "analytics_export_enabled",
+    "analytics_dashboard_refresh_seconds",
+)
 NIM_FIELDS = (
     "temperature",
     "top_p",
@@ -134,7 +156,14 @@ _VERSION = re.compile(
 
 def classified_settings() -> set[str]:
     return (
-        set(RUNTIME_FIELDS + ROUTING_FIELDS + REASONING_FIELDS + WEB_FIELDS)
+        set(
+            RUNTIME_FIELDS
+            + ROUTING_FIELDS
+            + REASONING_FIELDS
+            + WEB_FIELDS
+            + FREE_GUARD_FIELDS
+            + ANALYTICS_FIELDS
+        )
         | EXCLUDED_FIELDS
         | URL_FIELDS
         | {"nim", "vertex_location", "custom_providers"}

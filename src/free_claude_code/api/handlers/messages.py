@@ -24,8 +24,17 @@ from free_claude_code.api.response_streams import (
     terminal_execution_error_response,
     trace_terminal_execution_error,
 )
+from free_claude_code.application.analytics.models import (
+    ClientType,
+)
+from free_claude_code.application.analytics.ports import AnalyticsRecorder
 from free_claude_code.application.errors import ApplicationError
-from free_claude_code.application.execution import ProviderExecutor, TokenCounter
+from free_claude_code.application.execution import (
+    AnalyticsSink,
+    ProviderExecutor,
+    TokenCounter,
+)
+from free_claude_code.application.free_guard.policy import RoutingGuard
 from free_claude_code.application.ports import ModelInfoLookup, ProviderResolver
 from free_claude_code.application.routing import (
     ModelRouter,
@@ -81,9 +90,13 @@ class MessagesHandler:
         generation_id: int | None = None,
         request_headers: Mapping[str, str] | None = None,
         model_info_lookup: ModelInfoLookup | None = None,
+        routing_guard: RoutingGuard | None = None,
+        analytics: AnalyticsRecorder | None = None,
+        client_type: ClientType | str = ClientType.UNKNOWN,
     ) -> None:
         self._settings = settings
         self._model_router = model_router or ModelRouter(settings)
+        self._client_type = client_type
         self._provider_executor = provider_executor or ProviderExecutor(
             provider_resolver,
             progress_timeout_seconds=settings.provider_progress_timeout,
@@ -92,6 +105,11 @@ class MessagesHandler:
             log_raw_payloads=settings.log_raw_api_payloads,
             request_headers=request_headers,
             model_info_lookup=model_info_lookup,
+            routing_guard=routing_guard,
+            analytics=_messages_analytics_sink(
+                analytics, ClientType(_client_type_value(client_type))
+            ),
+            client_type=ClientType(_client_type_value(client_type)),
         )
         self._web_tools = WebToolService(
             settings=settings,
@@ -103,6 +121,7 @@ class MessagesHandler:
     async def create_native(
         self, routed: RoutedNativeMessagesRequest, *, request_id: str
     ) -> object:
+        self._provider_executor.set_request_streamed(bool(routed.request.stream))
         body = self._provider_executor.stream_native_messages(
             routed, request_id=request_id
         )
@@ -132,6 +151,7 @@ class MessagesHandler:
     ) -> object:
         """Create an Anthropic-compatible message response."""
         request_id = request_id or new_request_id()
+        self._provider_executor.set_request_streamed(bool(request_data.stream))
         try:
             require_non_empty_messages(request_data.messages)
             routed = self._model_router.resolve_messages_request(request_data)
@@ -393,3 +413,31 @@ def _stream_error_fields(error: dict[str, object]) -> tuple[str, str]:
         else "Provider request failed unexpectedly."
     )
     return error_type, message
+
+
+def _client_type_value(client_type: ClientType | str) -> str:
+    """Accept either the enum or its wire value."""
+
+    return client_type.value if isinstance(client_type, ClientType) else client_type
+
+
+def _messages_analytics_sink(
+    analytics: AnalyticsRecorder | None, client_type: ClientType
+) -> AnalyticsSink | None:
+    """Adapt the shared recorder to the per-stream sink the executor calls."""
+
+    if analytics is None:
+        return None
+
+    def start(
+        request_id: str, protocol: str, streamed: bool, requested_model: str | None
+    ):
+        return analytics.start_request(
+            request_id=request_id,
+            client_type=client_type,
+            wire_protocol=protocol,
+            requested_model=requested_model,
+            streamed=streamed,
+        )
+
+    return start

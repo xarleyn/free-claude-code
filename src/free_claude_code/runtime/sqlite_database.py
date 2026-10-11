@@ -39,6 +39,29 @@ _MESSAGING_COLUMNS = {
     "messaging_managed_messages": "sequence platform chat_id message_id ts direction kind",
     "messaging_legacy_import": "source outcome trees messages skipped cleanup_pending",
 }
+# FreeGuard evidence and analytics accounting tables. Present from schema version 6.
+_FREE_GUARD_ANALYTICS_COLUMNS = {
+    "model_eligibility": "id provider_id upstream_model_id account_binding_id billing_class "
+    "access_status card_required topup_required subscription_required trial_or_promo "
+    "evidence_json evidence_source evidence_checked_at_utc evidence_expires_at_utc "
+    "last_probe_at_utc blocked_reason_code manually_approved manual_attestation_url "
+    "manual_attestation_by manual_attestation_at_utc",
+    "pricing_snapshots": "id provider_id upstream_model_id price_info_json currency source_url fetched_at_utc",
+    "eligibility_audit": "id at_utc provider_id upstream_model_id event prior_status next_status "
+    "reason_code evidence_source",
+    "logical_requests": "request_id started_at_utc ended_at_utc origin client_type wire_protocol "
+    "requested_model resolved_provider_id resolved_upstream_model_id status normalized_error_code "
+    "duration_ms ttft_ms request_streamed fallback_count retry_count final_attempt_id client_label",
+    "upstream_attempts": "attempt_id request_id attempt_number provider_id upstream_model_id "
+    "fallback_from_attempt_id started_at_utc ended_at_utc status upstream_http_status "
+    "normalized_error_code retry_after_seconds input_tokens output_tokens cache_read_tokens "
+    "cache_write_tokens reasoning_output_tokens usage_source usage_completeness duration_ms "
+    "ttft_ms price_snapshot_id estimated_cost_usd cost_confidence",
+    "analytics_daily_rollups": "day_utc provider_id upstream_model_id client_type status origin "
+    "logical_requests upstream_attempts fallback_requests success_count error_count "
+    "blocked_count input_tokens_known output_tokens_known cache_read_tokens_known "
+    "cache_write_tokens_known unknown_usage_attempts estimated_cost_usd",
+}
 
 
 def _connect(
@@ -72,7 +95,11 @@ def _schema_version(connection: sqlite3.Connection) -> int:
     }
     if version == 0 and not tables:
         return version
-    columns = _BASE_COLUMNS | (_MESSAGING_COLUMNS if version >= 4 else {})
+    columns = (
+        _BASE_COLUMNS
+        | (_MESSAGING_COLUMNS if version >= 4 else {})
+        | (_FREE_GUARD_ANALYTICS_COLUMNS if version >= 6 else {})
+    )
     if tables != columns.keys():
         raise sqlite3.DatabaseError(
             "Unrecognized FCC database schema. Saved data was preserved."

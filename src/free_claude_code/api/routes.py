@@ -8,6 +8,18 @@ from fastapi.exceptions import RequestValidationError
 from loguru import logger
 from pydantic import ValidationError
 
+from free_claude_code.api.client_attribution import (
+    detect_client_type,
+)
+from free_claude_code.api.dependencies import (
+    get_services,
+    get_settings,
+    require_anthropic_proxy_auth,
+    require_proxy_auth,
+    resolve_provider,
+)
+from free_claude_code.application.analytics.models import ClientType
+from free_claude_code.application.analytics.ports import AnalyticsRecorder
 from free_claude_code.application.errors import ApplicationError, InvalidRequestError
 from free_claude_code.application.ports import ProviderResolver, RequestRuntimeLease
 from free_claude_code.application.routing import ModelRouter, supports_native_messages
@@ -28,13 +40,6 @@ from free_claude_code.core.json_types import JsonObject
 from free_claude_code.core.openai_responses import OpenAIResponsesRequest
 from free_claude_code.core.trace import trace_event
 
-from .dependencies import (
-    get_services,
-    get_settings,
-    require_anthropic_proxy_auth,
-    require_proxy_auth,
-    resolve_provider,
-)
 from .handlers import MessagesHandler, ResponsesHandler, TokenCountHandler
 from .model_catalog import (
     ModelCatalogView,
@@ -50,8 +55,28 @@ from .response_streams import bind_response_lifetime
 router = APIRouter()
 
 
+def _client_type(request: Request):
+    return detect_client_type(request.headers)
+
+
+def _analytics_recorder(services: ApiServices) -> AnalyticsRecorder | None:
+    """The request-path recorder, when one is configured."""
+
+    analytics = services.analytics
+    if analytics is None or not hasattr(analytics, "start_request"):
+        return None
+    return cast(AnalyticsRecorder, analytics)
+
+
 def _provider_resolver(lease: RequestRuntimeLease) -> ProviderResolver:
     return lambda provider_type: resolve_provider(provider_type, lease=lease)
+
+
+def _request_guard(services: ApiServices):
+    """Return the free-only routing guard, or None when it is not configured."""
+
+    guard = services.free_guard
+    return guard.guard() if guard is not None else None
 
 
 async def _create_messages_response(
@@ -60,7 +85,9 @@ async def _create_messages_response(
     *,
     request_id: str,
     request_headers: Mapping[str, str] | None = None,
+    client_type: ClientType = ClientType.UNKNOWN,
 ) -> object:
+    await services.ensure_services()
     lease: RequestRuntimeLease | None = None
     try:
         lease = await services.requests.acquire()
@@ -103,6 +130,9 @@ async def _create_messages_response(
             generation_id=lease.generation_id,
             request_headers=request_headers,
             model_info_lookup=lease.model_info,
+            routing_guard=_request_guard(services),
+            analytics=_analytics_recorder(services),
+            client_type=client_type,
         )
         if native:
             assert resolved is not None
@@ -135,7 +165,9 @@ async def _create_responses_response(
     *,
     request_id: str,
     request_headers: Mapping[str, str] | None = None,
+    client_type: ClientType = ClientType.UNKNOWN,
 ) -> object:
+    await services.ensure_services()
     lease: RequestRuntimeLease | None = None
     try:
         lease = await services.requests.acquire()
@@ -146,6 +178,9 @@ async def _create_responses_response(
             generation_id=lease.generation_id,
             request_headers=request_headers,
             model_info_lookup=lease.model_info,
+            routing_guard=_request_guard(services),
+            analytics=_analytics_recorder(services),
+            client_type=client_type,
         )
         response = await handler.create(request_data, request_id=request_id)
     except ApplicationError as exc:
@@ -181,6 +216,7 @@ async def create_message(
         cast(JsonObject, request_data),
         request_id=get_request_id(request),
         request_headers=request.headers,
+        client_type=_client_type(request),
     )
 
 
@@ -202,6 +238,7 @@ async def create_response(
         request_data,
         request_id=get_request_id(request),
         request_headers=request.headers,
+        client_type=_client_type(request),
     )
 
 
@@ -305,6 +342,7 @@ async def list_models(
         snapshot.settings,
         snapshot,
         view=view or x_fcc_model_view or ModelCatalogView.CLAUDE,
+        guard=services.free_guard,
     )
 
 
@@ -320,7 +358,9 @@ async def list_muse_models(
     """List the direct Responses models expected by Muse Code."""
     trace_event(stage="ingress", event="free_claude_code.api.models.list", source="api")
     snapshot = await services.requests.wait_for_catalog()
-    return build_muse_models_list_response(snapshot.settings, snapshot)
+    return build_muse_models_list_response(
+        snapshot.settings, snapshot, guard=services.free_guard
+    )
 
 
 @router.post("/stop")

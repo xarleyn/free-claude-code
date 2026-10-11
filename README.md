@@ -553,6 +553,88 @@ Windows PowerShell:
 & ([scriptblock]::Create((irm "https://raw.githubusercontent.com/Alishahryar1/free-claude-code/main/scripts/uninstall.ps1")))
 ```
 
+## FreeGuard: Only Call Models That Are Really Free
+
+Some providers hide paid models behind a "free" label, or mark a model as free in
+their catalog while still requiring a purchase on your account. That produces a
+confusing `429` / `insufficient_quota` error and, if retried automatically, a
+recurring charge. FreeGuard makes the distinction explicit.
+
+Turn it on in **Admin -> Model Config -> FreeGuard**, or with:
+
+```sh
+# off | catalog_filter_only | strict_free_only
+FCC_FREE_GUARD_MODE=strict_free_only
+```
+
+| Mode | What it does |
+|---|---|
+| `off` | Nothing changes. This is the default, so existing setups keep working. |
+| `catalog_filter_only` | Unconfirmed models are hidden from pickers and `/v1/models`. A direct model id is still attempted. |
+| `strict_free_only` | Deny-by-default before **every** upstream call, on every path. |
+
+In strict mode FCC checks a model *before* the request leaves the machine, on the
+direct-model path, on aliases and shortcuts, on retries, on fallbacks and on stream
+hand-offs. If the model is not confirmed free, the request fails with
+`free_guard_blocked` and **no HTTP request is sent**. A paid model can never be
+tried just because it was configured as a fallback.
+
+### What "free" means here
+
+A `$0` price in a provider's catalog proves nothing about your card. FreeGuard
+therefore requires positive confirmation that a model is free **without** a card, a
+purchased balance, a paid subscription or a trial/promotional balance. A provider
+failure carrying `model_requires_purchase` — even inside an HTTP `429` — is stored as
+a purchase lock, never as a rate limit, and the model is not retried.
+
+Until a model is confirmed, it is `unknown`, and unknown is blocked. Confirm models
+in **Admin -> Free Models** with **Attest free**, which records the public URL proving
+the model needs no card, along with who and when. That attestation is the only way a
+model becomes eligible; without it strict mode keeps blocking.
+
+### Local models
+
+Local inference (LM Studio, llama.cpp, Ollama) produces no external bill and is
+allowed by default. Set `FCC_FREE_GUARD_ALLOW_LOCAL_MODELS=false` to exclude it.
+
+## Analytics: What Went Where
+
+**Admin -> Analytics** records one row per client request and one row per actual
+upstream attempt, so a single request that retried or fell back shows as *one*
+request with *several* attempts instead of inflating the request count.
+
+It shows logical requests, success/error/blocked counts, downstream attempts and
+fallback rate, input/output and cached tokens separately, estimated cost with its
+confidence, P50/P95 latency and TTFT, and a per-request trace
+(`primary -> retry -> fallback`) with each attempt's usage and failure code.
+
+Usage that a provider did not report is shown as **unknown**, never as zero, so an
+incomplete count cannot silently understate consumption. Costs are only shown when
+the price and the token counts are both known.
+
+### What is stored, and where
+
+Everything lives in FCC's existing SQLite database (`~/.fcc/fcc.db`, with WAL and
+migrations). Stored:
+
+- Request start/end, client type, wire protocol, requested and resolved model.
+- Per attempt: provider, model, attempt number, HTTP status, normalized error code,
+  retry-after, input/output/cache/reasoning tokens, usage source and completeness,
+  duration, TTFT, estimated cost and cost confidence.
+- Eligibility evidence: provider, model, account fingerprint, billing class, access
+  status, source URL and review dates. Manual attestations with who/when/URL.
+
+Never stored: prompts, responses, tool arguments, repository paths, API keys,
+authorization headers, or any raw provider error blob.
+
+### Retention and export
+
+Raw history: 90 days. Rollups: 365 days. Both configurable
+(`FCC_ANALYTICS_RETENTION_DAYS`, `FCC_ANALYTICS_ROLLUP_RETENTION_DAYS`). Export as
+JSON or CSV from the same tab, bounded to 200 rows
+(`FCC_ANALYTICS_EXPORT_ENABLED=false` disables it). All analytics data is local;
+nothing is uploaded anywhere.
+
 ## Project Links
 
 For a problem after installation, run the command below and paste its output into your bug report. It also copies the JSON to your clipboard when available.

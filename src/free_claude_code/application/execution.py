@@ -10,6 +10,16 @@ from typing import Literal
 
 from loguru import logger
 
+from free_claude_code.application.analytics.models import (
+    AttemptStatus,
+    ClientType,
+    RequestStatus,
+    UsageCompleteness,
+    UsageSource,
+)
+from free_claude_code.application.analytics.usage import usage_extractor_for
+from free_claude_code.application.free_guard.errors import GuardBlockedError
+from free_claude_code.application.free_guard.policy import RoutingGuard
 from free_claude_code.core.anthropic import (
     anthropic_request_snapshot,
     get_token_count,
@@ -48,6 +58,35 @@ WireApi = Literal["messages", "responses"]
 CandidateStreamOpener = Callable[
     [int, ProviderModelTarget, ContinuationSeed | None], Awaitable[AsyncIterator[str]]
 ]
+AnalyticsSink = Callable[[str, str, bool, str | None], object]
+
+
+def gateway_protocol(wire_api: str) -> str:
+    """Map the internal wire name to the analytics wire protocol value."""
+
+    return "messages" if wire_api == "messages" else "responses"
+
+
+class _NullAttempts:
+    """Analytics sink used when no recorder is configured."""
+
+    def begin(self, **_kwargs):
+        return None
+
+    def mark_first_token(self, _attempt):
+        return None
+
+    def record_usage(self, _attempt, **_kwargs):
+        return None
+
+    def finish(self, _attempt, **_kwargs):
+        return None
+
+    def blocked(self, **_kwargs):
+        return None
+
+
+_NULL_ATTEMPTS = _NullAttempts()
 
 
 class ProviderExecutor:
@@ -64,6 +103,10 @@ class ProviderExecutor:
         log_raw_payloads: bool = False,
         request_headers: Mapping[str, str] | None = None,
         model_info_lookup: ModelInfoLookup | None = None,
+        routing_guard: RoutingGuard | None = None,
+        analytics: AnalyticsSink | None = None,
+        client_type: ClientType = ClientType.UNKNOWN,
+        request_streamed: bool = False,
     ) -> None:
         if not math.isfinite(progress_timeout_seconds) or progress_timeout_seconds <= 0:
             raise ValueError("progress_timeout_seconds must be finite and positive")
@@ -75,6 +118,10 @@ class ProviderExecutor:
         self._log_raw_payloads = log_raw_payloads
         self._request_headers = MappingProxyType(dict(request_headers or {}))
         self._progress_timeout_seconds = float(progress_timeout_seconds)
+        self._routing_guard = routing_guard
+        self._analytics = analytics
+        self._client_type = client_type
+        self._request_streamed = request_streamed
 
     def _progress_timeout_failure(
         self,
@@ -167,6 +214,181 @@ class ProviderExecutor:
         if self._generation_id is not None:
             fields["generation_id"] = self._generation_id
         trace_event(**fields)
+
+    def set_request_streamed(self, streamed: bool) -> None:
+        """Record whether this request streams, for attempt-level accounting."""
+
+        self._request_streamed = bool(streamed)
+
+    def _authorize(self, target: ProviderModelTarget):
+        """Re-check one canonical pair immediately before its outbound call.
+
+        Returns ``None`` when no guard is configured, which the caller treats as
+        "allowed". Only a configured guard can deny.
+        """
+
+        guard = self._routing_guard
+        if guard is None:
+            return None
+        return guard.authorize(
+            provider_id=target.provider_id, provider_model=target.provider_model
+        )
+
+    def _open_analytics(
+        self,
+        *,
+        request_id: str,
+        wire_api: WireApi,
+        gateway_model: str | None = None,
+    ) -> object | None:
+        """Start one logical request for this stream, when analytics is enabled."""
+
+        recorder = self._analytics
+        if recorder is None:
+            return None
+        try:
+            return recorder(
+                request_id,
+                gateway_protocol(wire_api),
+                self._request_streamed,
+                gateway_model,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "Analytics request start failed: exc_type={}", type(exc).__name__
+            )
+            return None
+
+    @staticmethod
+    def _attempt_recorder(analytics: object) -> object:
+        if analytics is None:
+            return _NULL_ATTEMPTS
+        recorder = getattr(analytics, "attempt_recorder", None)
+        if recorder is None:
+            return _NULL_ATTEMPTS
+        try:
+            return recorder(analytics) or _NULL_ATTEMPTS
+        except Exception:  # pragma: no cover - defensive
+            return _NULL_ATTEMPTS
+
+    def _begin_attempt(
+        self,
+        attempts: object,
+        *,
+        request_id: str,
+        attempt_number: int,
+        target: ProviderModelTarget,
+        fallback_from_attempt_id: str | None,
+    ) -> object | None:
+        begin = getattr(attempts, "begin", None)
+        if begin is None:
+            return None
+        try:
+            return begin(
+                request_id=request_id,
+                attempt_number=attempt_number,
+                provider_id=target.provider_id,
+                upstream_model_id=target.provider_model,
+                fallback_from_attempt_id=fallback_from_attempt_id,
+                streamed=self._request_streamed,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "Analytics attempt start failed: exc_type={}", type(exc).__name__
+            )
+            return None
+
+    def _record_blocked(
+        self,
+        attempts: object,
+        *,
+        request_id: str,
+        attempt_number: int,
+        target: ProviderModelTarget,
+        decision,
+    ) -> None:
+        blocked = getattr(attempts, "blocked", None)
+        if blocked is None:
+            return
+        try:
+            blocked(
+                request_id=request_id,
+                attempt_number=attempt_number,
+                provider_id=target.provider_id,
+                upstream_model_id=target.provider_model,
+                decision=decision,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "Analytics blocked record failed: exc_type={}", type(exc).__name__
+            )
+
+    @staticmethod
+    def _finish_attempt(
+        attempts: object,
+        attempt: object | None,
+        *,
+        status: AttemptStatus,
+        usage,
+        completeness: UsageCompleteness,
+        http_status: int | None,
+        normalized_error_code: str | None = None,
+    ) -> None:
+        if attempt is None:
+            return
+        record_usage = getattr(attempts, "record_usage", None)
+        finish = getattr(attempts, "finish", None)
+        try:
+            if record_usage is not None:
+                record_usage(
+                    attempt,
+                    usage=usage,
+                    source=(
+                        UsageSource.PROVIDER_REPORTED
+                        if usage.known
+                        else UsageSource.UNKNOWN
+                    ),
+                    completeness=completeness,
+                )
+            if finish is not None:
+                finish(
+                    attempt,
+                    status=status,
+                    upstream_http_status=http_status,
+                    normalized_error_code=normalized_error_code,
+                )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "Analytics attempt finish failed: exc_type={}", type(exc).__name__
+            )
+
+    @staticmethod
+    def _complete_request(
+        analytics: object,
+        *,
+        status: RequestStatus,
+        normalized_error_code: str | None = None,
+        provider_id: str | None = None,
+        upstream_model_id: str | None = None,
+    ) -> None:
+        if analytics is None:
+            return
+        complete = getattr(analytics, "complete_request", None)
+        if complete is None:
+            return
+        try:
+            complete(
+                analytics,
+                status=status,
+                normalized_error_code=normalized_error_code,
+                provider_id=provider_id,
+                upstream_model_id=upstream_model_id,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "Analytics request completion failed: exc_type={}",
+                type(exc).__name__,
+            )
 
     def stream_native_messages(
         self,
@@ -344,6 +566,38 @@ class ProviderExecutor:
         primary = resolved.primary
         candidates = (primary, *resolved.fallbacks)
         gateway_model = resolved.original_model
+
+        # Line of defence 1: never let a blocked model into the candidate list, so a
+        # fallback chain cannot silently substitute a paid or unproven model.
+        guard = self._routing_guard
+        if guard is not None:
+            allowed, blocked = guard.filter_targets(candidates, account_binding_id=None)
+            if blocked:
+                guard.trace_blocked_route(
+                    request_id=request_id, blocked=blocked, wire_api=wire_api
+                )
+                if not allowed:
+                    decision = blocked[0][1]
+                    analytics = self._open_analytics(
+                        request_id=request_id, wire_api=wire_api
+                    )
+                    attempts = self._attempt_recorder(analytics)
+                    self._record_blocked(
+                        attempts,
+                        request_id=request_id,
+                        attempt_number=1,
+                        target=blocked[0][0],
+                        decision=decision,
+                    )
+                    self._complete_request(
+                        analytics,
+                        status=RequestStatus.BLOCKED,
+                        normalized_error_code=decision.reason_code.value,
+                    )
+                    raise GuardBlockedError(decision, decision.detail)
+            candidates = tuple(allowed)
+            if not candidates:
+                raise TypeError("resolved route has no candidates")
         route_trace: dict[str, object] = {
             "stage": "routing",
             "event": "free_claude_code.api.route.resolved",
@@ -387,13 +641,43 @@ class ProviderExecutor:
                 f"{raw_log_label} [{{}}]: {{}}", lambda: request_id, raw_log_payload
             )
 
+        analytics = self._open_analytics(
+            request_id=request_id, wire_api=wire_api, gateway_model=gateway_model
+        )
+        attempts = self._attempt_recorder(analytics)
+
         async def provider_body() -> AsyncIterator[str]:
             loop = asyncio.get_running_loop()
             progress_deadline = loop.time() + self._progress_timeout_seconds
             delivery = current_stream_delivery()
             continuation: ContinuationSeed | None = None
+            current_attempt: object | None = None
+            last_attempt_id: str | None = None
             for index, target in enumerate(candidates):
                 record_request_route(target.provider_id, target.provider_model)
+                # Line of defence 2: re-check the exact canonical pair immediately
+                # before the outbound call, whatever changed since the route was
+                # resolved. This covers direct ids, aliases, retries and fallbacks.
+                decision = self._authorize(target)
+                if decision is not None and not decision.allowed:
+                    self._record_blocked(
+                        attempts,
+                        request_id=request_id,
+                        attempt_number=index + 1,
+                        target=target,
+                        decision=decision,
+                    )
+                    raise GuardBlockedError(decision, decision.detail)
+                current_attempt = self._begin_attempt(
+                    attempts,
+                    request_id=request_id,
+                    attempt_number=index + 1,
+                    target=target,
+                    fallback_from_attempt_id=last_attempt_id,
+                )
+                if current_attempt is not None:
+                    last_attempt_id = getattr(current_attempt, "attempt_id", None)
+                extractor = usage_extractor_for(wire_api)
                 provider_stream: AsyncIterator[str] | None = None
                 candidate_committed = False
                 candidate_failure: ExecutionFailure | None = None
@@ -458,6 +742,13 @@ class ProviderExecutor:
                                     candidate_index=index + 1,
                                     candidate_count=len(candidates),
                                 )
+                            if current_attempt is not None:
+                                mark_first_token = getattr(
+                                    attempts, "mark_first_token", None
+                                )
+                                if mark_first_token is not None:
+                                    mark_first_token(current_attempt)
+                        extractor.feed(chunk)
                         yield chunk
                         progress_deadline = loop.time() + self._progress_timeout_seconds
                 finally:
@@ -483,8 +774,32 @@ class ProviderExecutor:
                                 provider_id=target.provider_id,
                             ) from exc
 
+                usage, completeness = extractor.finalize()
                 if candidate_failure is None:
+                    self._finish_attempt(
+                        attempts,
+                        current_attempt,
+                        status=AttemptStatus.SUCCESS,
+                        usage=usage,
+                        completeness=completeness,
+                        http_status=None,
+                    )
+                    self._complete_request(
+                        analytics,
+                        status=RequestStatus.SUCCESS,
+                        provider_id=target.provider_id,
+                        upstream_model_id=target.provider_model,
+                    )
                     return
+                self._finish_attempt(
+                    attempts,
+                    current_attempt,
+                    status=AttemptStatus.ERROR,
+                    usage=usage,
+                    completeness=completeness,
+                    http_status=candidate_failure.status_code,
+                    normalized_error_code=candidate_failure.kind.value,
+                )
                 recovery_action = "continue" if continuation is not None else "restart"
                 recovery_reason = "no_candidate_output"
                 context = candidate_failure.stream_context
@@ -502,6 +817,12 @@ class ProviderExecutor:
                         raise candidate_failure
                     if assessment.action is RecoveryAction.HANDOFF:
                         delivery.begin_continuation(handoff=True)
+                        self._complete_request(
+                            analytics,
+                            status=RequestStatus.PARTIAL_STREAM,
+                            provider_id=target.provider_id,
+                            upstream_model_id=target.provider_model,
+                        )
                         return
                     continuation = assessment.seed
                     recovery_action = assessment.action.value

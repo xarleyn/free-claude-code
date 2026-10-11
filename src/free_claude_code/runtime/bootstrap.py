@@ -5,9 +5,12 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from loguru import logger
+
 from free_claude_code.api.app import create_app
 from free_claude_code.api.ports import ApiServices
 from free_claude_code.application.code_sessions import CodeService
+from free_claude_code.application.model_catalog import read_model_catalog
 from free_claude_code.config.loader import ManagedConfigStore
 from free_claude_code.config.logging_config import configure_logging
 from free_claude_code.config.paths import (
@@ -28,12 +31,17 @@ if TYPE_CHECKING:
     from free_claude_code.providers.admission import ProviderAdmissionController
     from free_claude_code.providers.runtime.factory import ProviderFactory
 
+from .analytics_service import AnalyticsService
+from .analytics_store import AnalyticsStore
+from .analytics_writer import AnalyticsWriter
 from .application import ApplicationRuntime, RestartCallback
 from .asgi import RuntimeASGIApp
 from .code_sessions_sqlite import SQLiteCodeStore
 from .codex_app_server import CodexHarnessFactory
 from .codex_catalog import CodexModelCatalogPublisher
 from .configuration import ConfigurationService
+from .free_guard_service import FreeGuardService
+from .free_guard_store import EligibilityStore
 from .provider_manager import ProviderRuntimeManager
 from .sqlite_database import SQLiteDatabase
 from .web_tools.client import HTTPWebToolsClient
@@ -81,6 +89,37 @@ def build_asgi_app(
         SQLiteCodeStore(database),
         CodexHarnessFactory(provider_manager),
     )
+
+    def _provider_models() -> dict[str, tuple[str, ...]]:
+        """The provider/model pairs currently visible, for eligibility refresh."""
+
+        try:
+            catalog = read_model_catalog(provider_manager)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug(
+                "FreeGuard model inventory read failed: {}", type(exc).__name__
+            )
+            return {}
+        inventory: dict[str, tuple[str, ...]] = {}
+        for model in catalog.models:
+            provider_id, _, model_id = model.provider_model_ref.partition("/")
+            inventory.setdefault(provider_id, ())
+            if model_id:
+                inventory[provider_id] = (*inventory[provider_id], model_id)
+        return inventory
+
+    free_guard = FreeGuardService(
+        provider_manager.current_settings,
+        store=EligibilityStore(database),
+        model_inventory=_provider_models,
+    )
+    analytics_store = AnalyticsStore(database)
+    analytics_writer = AnalyticsWriter(analytics_store)
+    analytics = AnalyticsService(
+        provider_manager.current_settings,
+        store=analytics_store,
+        writer=analytics_writer,
+    )
     runtime = ApplicationRuntime(
         provider_manager,
         configuration=ConfigurationService(ManagedConfigStore()),
@@ -90,6 +129,8 @@ def build_asgi_app(
         transcriber_factory=_create_transcriber,
         restart_callback=restart_callback,
         connected_accounts={"openai": openai_auth, "github_copilot": copilot_auth},
+        free_guard=free_guard,
+        analytics=analytics,
     )
     services = ApiServices(
         requests=provider_manager,
@@ -97,6 +138,8 @@ def build_asgi_app(
         tasks=runtime,
         web_tools=HTTPWebToolsClient(),
         code=code_service,
+        free_guard=free_guard,
+        analytics=analytics,
     )
     return RuntimeASGIApp(create_app(services), runtime)
 

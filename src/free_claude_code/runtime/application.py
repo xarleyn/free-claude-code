@@ -39,8 +39,10 @@ from free_claude_code.providers.credential_validation import (
     check_credentials,
 )
 
+from .analytics_service import AnalyticsService
 from .configuration import ConfigurationService
 from .folder_picker import NativeFolderPicker
+from .free_guard_service import FreeGuardService
 from .integration_service import IntegrationService
 from .lifecycle import best_effort
 from .messaging_service import MessagingService
@@ -97,6 +99,25 @@ async def _await_owned_task[T](
     return result
 
 
+def _free_guard_summary(guard: FreeGuardService | None) -> JsonObject:
+    """Report guard mode even when the feature is absent."""
+
+    if guard is None:
+        return {"mode": "off", "available": False}
+    summary: JsonObject = guard.summary()
+    if guard is not None:
+        summary = dict(guard.summary())
+        summary["available"] = True
+    return summary
+
+
+def _analytics_stats(analytics: AnalyticsService | None) -> JsonObject:
+    if analytics is None:
+        return {"enabled": False, "available": False}
+    stats: JsonObject = analytics.stats()
+    return stats
+
+
 class ApplicationRuntime:
     """Own every process-lifetime resource used by one server instance."""
 
@@ -112,11 +133,15 @@ class ApplicationRuntime:
         | None = None,
         restart_callback: RestartCallback | None = None,
         connected_accounts: Mapping[str, ConnectedAccountPort] | None = None,
+        free_guard: FreeGuardService | None = None,
+        analytics: AnalyticsService | None = None,
     ) -> None:
         self.provider_manager = provider_manager
         self._configuration = configuration
         self._code_service = code_service
         self._database = database
+        self._free_guard = free_guard
+        self._analytics = analytics
         self._folder_picker = NativeFolderPicker()
         self._restart_callback = restart_callback
         self._connected_accounts = dict(connected_accounts or {})
@@ -132,6 +157,7 @@ class ApplicationRuntime:
         self._closed = False
         self._provider_manager_closed = False
         self._connected_accounts_closed = False
+        self._services_started = False
         self._lifecycle_lock = asyncio.Lock()
         self._startup_tasks: list[asyncio.Task[None]] = []
         self._http_ready = asyncio.Event()
@@ -264,6 +290,58 @@ class ApplicationRuntime:
                 )
             return self._closed
 
+    async def _lazy_start_services(self) -> None:
+        """Start FreeGuard and analytics once, after the database is settled.
+
+        Both features read and write FCC's shared database, whose writer pool the
+        Code service owns at startup. Starting them here — on the first use that
+        actually needs them, not on the startup critical path — keeps server startup
+        independent of them, exactly as the Code sessions and chat cleanup already
+        behave. Either one failing only degrades its own feature.
+        """
+
+        if self._services_started:
+            return
+        self._services_started = True
+        guard = self._free_guard
+        if guard is not None:
+            try:
+                await guard.start()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning(
+                    "FreeGuard evidence load failed: exc_type={}. Models stay "
+                    "unverified, so strict mode keeps blocking them.",
+                    type(exc).__name__,
+                )
+        analytics = self._analytics
+        if analytics is not None:
+            try:
+                await analytics.start()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning(
+                    "Analytics writer start failed: exc_type={}. Requests are "
+                    "unaffected.",
+                    type(exc).__name__,
+                )
+
+    async def _stop_free_guard(self) -> None:
+        guard = self._free_guard
+        if guard is None:
+            return
+        if not await best_effort("free_guard.close", guard.close()):
+            return
+
+    async def _stop_analytics(self) -> None:
+        analytics = self._analytics
+        if analytics is None:
+            return
+        if not await best_effort("analytics.close", analytics.close()):
+            return
+
     async def pick_folder(self, initial_path: str | None) -> str | None:
         return await self._folder_picker.pick_folder(initial_path)
 
@@ -351,6 +429,12 @@ class ApplicationRuntime:
         automatic = bool(prepared.pending_fields and self._signal_restart())
         if automatic:
             self._pending_fields = []
+        if self._free_guard is not None:
+            # Eligibility evidence is account-specific: reload it so a changed key
+            # invalidates the previous proof rather than inheriting it.
+            self._free_guard.maybe_reload()
+        if self._analytics is not None:
+            self._analytics.note_settings_changed()
         result["restart"] = self._restart_metadata(
             prepared.pending_fields,
             prepared.settings,
@@ -461,6 +545,8 @@ class ApplicationRuntime:
                 provider_id: sorted(model_ids)
                 for provider_id, model_ids in self.provider_manager.cached_model_ids().items()
             },
+            "free_guard": _free_guard_summary(self._free_guard),
+            "analytics_stats": _analytics_stats(self._analytics),
         }
 
     async def test_provider(self, provider_id: str) -> JsonObject:
@@ -577,7 +663,16 @@ class ApplicationRuntime:
             result["instance_id"] = self._instance_id
         return result
 
+    async def begin_shutdown_async(self) -> None:
+        """Async half of shutdown, for owners that must await resource release."""
+        self._draining = True
+        if self._analytics is not None:
+            await best_effort("analytics.close", self._analytics.close())
+        if self._free_guard is not None:
+            await best_effort("free_guard.close", self._free_guard.close())
+
     async def _close_owned_resources(self) -> bool:
+        await self.begin_shutdown_async()
         if not await best_effort("folder_picker.close", self._folder_picker.close()):
             return False
         if not await self._messaging.close_delivery():

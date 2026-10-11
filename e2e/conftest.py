@@ -37,10 +37,15 @@ from free_claude_code.harnesses import (
 )
 from free_claude_code.providers.base import BaseProvider, ProviderConfig
 from free_claude_code.providers.runtime import ProviderRuntime
+from free_claude_code.runtime.analytics_service import AnalyticsService
+from free_claude_code.runtime.analytics_store import AnalyticsStore
+from free_claude_code.runtime.analytics_writer import AnalyticsWriter
 from free_claude_code.runtime.application import ApplicationRuntime
 from free_claude_code.runtime.asgi import RuntimeASGIApp
 from free_claude_code.runtime.configuration import ConfigurationService
 from free_claude_code.runtime.folder_picker import NativeFolderPicker
+from free_claude_code.runtime.free_guard_service import FreeGuardService
+from free_claude_code.runtime.free_guard_store import EligibilityStore
 from free_claude_code.runtime.provider_manager import ProviderRuntimeManager
 from tests.web_tools_support import StubWebToolsClient
 
@@ -281,6 +286,17 @@ def admin_base_url(
         "_select",
         lambda _picker, initial, stop: code_control.folder_picker.select(initial, stop),
     )
+    analytics_store = AnalyticsStore(code_control.database)
+    analytics_writer = AnalyticsWriter(analytics_store)
+    free_guard = FreeGuardService(
+        manager.current_settings,
+        store=EligibilityStore(code_control.database),
+    )
+    analytics = AnalyticsService(
+        manager.current_settings,
+        store=analytics_store,
+        writer=analytics_writer,
+    )
     app = RuntimeASGIApp(
         create_app(
             ApiServices(
@@ -289,6 +305,8 @@ def admin_base_url(
                 tasks=runtime,
                 web_tools=StubWebToolsClient(),
                 code=code_control.service,
+                free_guard=free_guard,
+                analytics=analytics,
             )
         ),
         runtime,

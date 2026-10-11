@@ -1,0 +1,356 @@
+/* Analytics and Free Models tabs.
+   Deliberately built from the Admin's existing design tokens (--card, --line,
+   --text, --muted, --accent, --ok/--warn/--error) so both tabs read as part of the
+   same product. No external assets: charts are inline SVG, so this works offline. */
+
+.analytics-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.analytics-toolbar .integration-actions {
+  margin-top: 0;
+}
+
+.analytics-periods {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.analytics-periods select {
+  min-width: 190px;
+}
+
+.analytics-inline-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+  min-height: 40px;
+}
+
+.analytics-inline-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.analytics-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+/* Stat tiles ------------------------------------------------------------- */
+
+.analytics-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+}
+
+.analytics-stat {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  padding: 12px 14px;
+  min-width: 0;
+  min-height: 76px;
+}
+
+.analytics-stat dt {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.analytics-stat dd {
+  margin: 6px 0 0;
+  font-size: 21px;
+  font-weight: 700;
+  color: var(--text-strong);
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.analytics-stat dd[data-state="unknown"] {
+  color: var(--warn);
+}
+
+.analytics-stat dd[data-state="muted"] {
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.analytics-note {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin: 16px 0 0;
+  max-width: 78ch;
+}
+
+.analytics-note.analytics-tight {
+  margin-top: 12px;
+}
+
+.analytics-empty {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 4px 0 0;
+}
+
+/* Chart ------------------------------------------------------------------ */
+
+.analytics-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  color: var(--accent);
+}
+
+.analytics-chart .analytics-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.analytics-chart .analytics-bar {
+  fill: currentColor;
+}
+
+.analytics-chart .analytics-bar[data-status="error"] {
+  fill: var(--error);
+}
+
+.analytics-chart .analytics-bar[data-status="blocked"] {
+  fill: var(--warn);
+}
+
+.analytics-chart .analytics-axis {
+  fill: var(--muted);
+  font-size: 10px;
+}
+
+.analytics-chart-frame {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--input);
+  padding: 16px;
+  margin-top: 24px;
+}
+
+/* Tables ----------------------------------------------------------------- */
+
+.analytics-table-wrap {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  overflow-x: auto;
+  margin-top: 24px;
+}
+
+.analytics-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.analytics-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.analytics-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  vertical-align: top;
+  overflow-wrap: break-word;
+}
+
+.analytics-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.analytics-table tbody tr:hover {
+  background: var(--card-hover);
+}
+
+.analytics-table td.analytics-num,
+.analytics-table th.analytics-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Short cells (cost, status words) should never hyphenate mid-word. */
+.analytics-table td.analytics-word {
+  white-space: nowrap;
+}
+
+.analytics-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.analytics-status[data-status="success"] {
+  color: var(--ok);
+  background: var(--ok-bg);
+  border-color: var(--ok-border);
+}
+
+.analytics-status[data-status="error"],
+.analytics-status[data-status="blocked"] {
+  color: var(--error);
+  background: var(--error-bg);
+  border-color: var(--error-border);
+}
+
+.analytics-status[data-status="partial_stream"],
+.analytics-status[data-status="canceled"] {
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+}
+
+.analytics-status[data-status="unknown"],
+.analytics-status[data-status="abandoned"] {
+  color: var(--muted);
+  background: var(--neutral-bg);
+  border-color: var(--neutral-border);
+}
+
+.analytics-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.analytics-link:hover {
+  color: var(--text-strong);
+}
+
+/* Request trace ---------------------------------------------------------- */
+
+.analytics-trace {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.analytics-trace-step {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  padding: 12px 14px;
+}
+
+.analytics-trace-step[data-status="error"],
+.analytics-trace-step[data-status="blocked"] {
+  border-left-color: var(--error);
+}
+
+.analytics-trace-step[data-status="success"] {
+  border-left-color: var(--ok);
+}
+
+.analytics-trace-target {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.analytics-trace-meta {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin-top: 4px;
+}
+
+/* Free Models eligibility table ------------------------------------------ */
+
+.analytics-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 720px) {
+  .analytics-toolbar {
+    align-items: stretch;
+  }
+
+  .analytics-periods {
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .analytics-table tbody tr:hover {
+    background: var(--card);
+  }
+}
+
+.analytics-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Sub-headings inside a settings-section, matching the Messaging layout. */
+.settings-section > h4 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-strong);
+  margin: 32px 0 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-section > h4:first-of-type {
+  margin-top: 28px;
+}

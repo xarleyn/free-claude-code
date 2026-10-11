@@ -55,6 +55,16 @@ SECTIONS: tuple[ConfigSectionSpec, ...] = (
         "Server API token, rate limits, timeouts, and process settings.",
     ),
     ConfigSectionSpec(
+        "free_guard",
+        "FreeGuard",
+        "Only call models confirmed free without a card, top-up or subscription.",
+    ),
+    ConfigSectionSpec(
+        "analytics",
+        "Analytics",
+        "Local request, token and cost accounting. No prompts, responses or secrets.",
+    ),
+    ConfigSectionSpec(
         "messaging",
         "Messaging",
         "Discord, Telegram, CLI workspace, and session settings.",
@@ -83,6 +93,88 @@ SECTIONS: tuple[ConfigSectionSpec, ...] = (
     ),
 )
 
+
+_FREE_GUARD_FIELDS: tuple[ConfigFieldSpec, ...] = (
+    ConfigFieldSpec(
+        "FCC_FREE_GUARD_MODE",
+        "Free-only mode",
+        "free_guard",
+        "select",
+        settings_attr="free_guard_mode",
+        options=(
+            ConfigOptionSpec("off", "Off — legacy behaviour"),
+            ConfigOptionSpec("catalog_filter_only", "Catalog filter only"),
+            ConfigOptionSpec("strict_free_only", "Strict free only — deny by default"),
+        ),
+        description=(
+            "Strict blocks every model whose eligibility is unconfirmed, on every "
+            "route, before any upstream call."
+        ),
+    ),
+    ConfigFieldSpec(
+        "FCC_FREE_GUARD_ALLOW_LOCAL_MODELS",
+        "Allow local models",
+        "free_guard",
+        "boolean",
+        settings_attr="free_guard_allow_local_models",
+        description="Local inference produces no external bill.",
+    ),
+    ConfigFieldSpec(
+        "FCC_FREE_GUARD_ALLOW_MANUAL_APPROVAL",
+        "Allow manual free attestation",
+        "free_guard",
+        "boolean",
+        settings_attr="free_guard_allow_manual_approval",
+        description=(
+            "Permit a recorded human attestation that a model needs no card or "
+            "top-up. This is the only route to an eligible free model."
+        ),
+    ),
+    ConfigFieldSpec(
+        "FCC_FREE_GUARD_ELIGIBILITY_TTL_HOURS",
+        "Evidence lifetime (hours)",
+        "free_guard",
+        "number",
+        settings_attr="free_guard_eligibility_ttl_hours",
+        description="How long a confirmed free verdict stays valid before re-checking.",
+    ),
+)
+
+_ANALYTICS_FIELDS: tuple[ConfigFieldSpec, ...] = (
+    ConfigFieldSpec(
+        "FCC_ANALYTICS_ENABLED",
+        "Record analytics",
+        "analytics",
+        "boolean",
+        settings_attr="analytics_enabled",
+        description=(
+            "Stores request and attempt metadata locally. Prompts, responses and "
+            "credentials are never recorded."
+        ),
+    ),
+    ConfigFieldSpec(
+        "FCC_ANALYTICS_RETENTION_DAYS",
+        "Raw retention (days)",
+        "analytics",
+        "number",
+        settings_attr="analytics_retention_days",
+        description="How long per-request history is kept.",
+    ),
+    ConfigFieldSpec(
+        "FCC_ANALYTICS_EXPORT_ENABLED",
+        "Allow export",
+        "analytics",
+        "boolean",
+        settings_attr="analytics_export_enabled",
+    ),
+    ConfigFieldSpec(
+        "FCC_ANALYTICS_DASHBOARD_REFRESH_SECONDS",
+        "Dashboard refresh (seconds)",
+        "analytics",
+        "number",
+        settings_attr="analytics_dashboard_refresh_seconds",
+    ),
+)
 
 _NON_PROVIDER_FIELDS: tuple[ConfigFieldSpec, ...] = (
     ConfigFieldSpec(
@@ -583,6 +675,8 @@ def _catalog_smoke_fields() -> tuple[ConfigFieldSpec, ...]:
 FIELDS: tuple[ConfigFieldSpec, ...] = (
     *provider_field_specs(),
     *_NON_PROVIDER_FIELDS,
+    *_FREE_GUARD_FIELDS,
+    *_ANALYTICS_FIELDS,
     *_catalog_smoke_fields(),
 )
 FIELD_BY_KEY = {field.key: field for field in FIELDS}

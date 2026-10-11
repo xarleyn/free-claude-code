@@ -15,8 +15,14 @@ from free_claude_code.api.response_streams import (
     terminal_execution_error_response,
     trace_terminal_execution_error,
 )
+from free_claude_code.application.analytics.models import ClientType
+from free_claude_code.application.analytics.ports import AnalyticsRecorder
 from free_claude_code.application.errors import ApplicationError, InvalidRequestError
-from free_claude_code.application.execution import ProviderExecutor
+from free_claude_code.application.execution import (
+    AnalyticsSink,
+    ProviderExecutor,
+)
+from free_claude_code.application.free_guard.policy import RoutingGuard
 from free_claude_code.application.ports import ModelInfoLookup, ProviderResolver
 from free_claude_code.application.routing import ModelRouter
 from free_claude_code.config.settings import Settings
@@ -45,6 +51,10 @@ class ResponsesHandler:
         generation_id: int | None = None,
         request_headers: Mapping[str, str] | None = None,
         model_info_lookup: ModelInfoLookup | None = None,
+        routing_guard: RoutingGuard | None = None,
+        analytics: AnalyticsRecorder | None = None,
+        client_type: str = ClientType.UNKNOWN.value,
+        request_streamed: bool = True,
     ) -> None:
         self._settings = settings
         self._model_router = model_router or ModelRouter(settings)
@@ -55,6 +65,10 @@ class ResponsesHandler:
             log_raw_payloads=settings.log_raw_api_payloads,
             request_headers=request_headers,
             model_info_lookup=model_info_lookup,
+            routing_guard=routing_guard,
+            analytics=_responses_analytics_sink(analytics),
+            client_type=ClientType(client_type),
+            request_streamed=request_streamed,
         )
 
     async def create(
@@ -62,6 +76,7 @@ class ResponsesHandler:
     ) -> object:
         """Create a streaming OpenAI Responses-compatible response."""
         request_id = request_id or new_request_id()
+        self._provider_executor.set_request_streamed(request_data.stream is not False)
         if request_data.stream is False:
             raise InvalidRequestError(
                 "FCC /v1/responses supports streaming only; omit stream or set stream=true."
@@ -169,3 +184,25 @@ class ResponsesHandler:
             status_code=failure.status_code,
             content=openai_failure_payload(failure),
         )
+
+
+def _responses_analytics_sink(
+    analytics: AnalyticsRecorder | None, client_type: str = "unknown"
+) -> AnalyticsSink | None:
+    """Adapt the shared recorder to the per-stream sink the executor calls."""
+
+    if analytics is None:
+        return None
+
+    def start(
+        request_id: str, protocol: str, streamed: bool, requested_model: str | None
+    ):
+        return analytics.start_request(
+            request_id=request_id,
+            client_type=client_type,
+            wire_protocol=protocol,
+            requested_model=requested_model,
+            streamed=streamed,
+        )
+
+    return start

@@ -1,11 +1,14 @@
 """Model-list response construction for FCC clients."""
 
 import math
+from dataclasses import replace
 from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from free_claude_code.application.free_guard.models import FreeGuardMode
+from free_claude_code.application.free_guard.policy import free_guard_config
 from free_claude_code.application.model_catalog import (
     ModelCatalog,
     context_window_for_client,
@@ -20,6 +23,8 @@ from free_claude_code.core.gateway_model_ids import (
     no_thinking_gateway_model_id,
 )
 from free_claude_code.core.model_capabilities import ModelInputModality
+
+from .ports import FreeGuardPort
 
 DISCOVERED_MODEL_CREATED_AT = "1970-01-01T00:00:00Z"
 _INFERENCE_IDLE_TIMEOUT_MARGIN_SECONDS = 60
@@ -153,9 +158,18 @@ def build_models_list_response(
     runtime: ModelCatalogPort,
     *,
     view: ModelCatalogView = ModelCatalogView.CLAUDE,
+    guard: FreeGuardPort | None = None,
 ) -> ModelsListResponse:
-    """Return the application model inventory in the requested client view."""
+    """Return the application model inventory in the requested client view.
+
+    In ``catalog_filter_only`` and ``strict_free_only`` the visible catalog is filtered
+    by the same eligibility policy that guards the call path: a model the policy has
+    not cleared is not advertised, so no client can be invited into a request that
+    would be refused anyway.
+    """
+
     catalog = read_model_catalog(runtime, settings)
+    catalog = filter_catalog(catalog, settings, guard=guard)
     if view in {ModelCatalogView.CLAUDE, ModelCatalogView.CLAUDE_DESKTOP}:
         return _build_claude_models_response(
             catalog, desktop=view is ModelCatalogView.CLAUDE_DESKTOP
@@ -163,12 +177,48 @@ def build_models_list_response(
     return _build_direct_models_response(settings, catalog, view=view)
 
 
+def catalog_filter_mode(settings: Settings) -> FreeGuardMode:
+    """Whether and how strongly the visible catalog must be filtered."""
+
+    return free_guard_config(settings).mode
+
+
+def filter_catalog(
+    catalog: ModelCatalog,
+    settings: Settings,
+    *,
+    guard: FreeGuardPort | None = None,
+) -> ModelCatalog:
+    """Drop models the free-only policy has not cleared, when it is active."""
+
+    mode = free_guard_config(settings).mode
+    if mode is FreeGuardMode.OFF or guard is None:
+        return catalog
+    allowed = [
+        model
+        for model in catalog.models
+        if guard.is_eligible_model(
+            model.provider_model_ref.partition("/")[0],
+            model.provider_model_ref.partition("/")[2],
+        )
+    ]
+    if len(allowed) == len(catalog.models):
+        return catalog
+    default_ref = catalog.default_model_id or ""
+    default_allowed = any(model.provider_model_ref == default_ref for model in allowed)
+    return replace(
+        catalog,
+        models=tuple(allowed),
+        default_model_id=default_ref if default_allowed else None,
+    )
+
+
 def build_muse_models_list_response(
-    settings: Settings, runtime: ModelCatalogPort
+    settings: Settings, runtime: ModelCatalogPort, *, guard: FreeGuardPort | None = None
 ) -> ModelsListResponse:
     """Keep routable IDs while making them visible to Muse's native picker."""
     catalog = build_models_list_response(
-        settings, runtime, view=ModelCatalogView.RESPONSES
+        settings, runtime, view=ModelCatalogView.RESPONSES, guard=guard
     )
     for model in catalog.data:
         limits = (
