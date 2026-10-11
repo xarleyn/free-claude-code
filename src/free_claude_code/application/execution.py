@@ -220,6 +220,53 @@ class ProviderExecutor:
 
         self._request_streamed = bool(streamed)
 
+    def _context_window(self, target: ProviderModelTarget) -> int | None:
+        """The reported context window of one target, or ``None`` when unknown."""
+
+        info = self._model_info_lookup(target.provider_id, target.provider_model)
+        context = info.context_window_tokens if info is not None else None
+        return context if context is not None and context > 0 else None
+
+    def _context_safe_candidates(
+        self, candidates: tuple[ProviderModelTarget, ...], *, request_id: str
+    ) -> tuple[tuple[ProviderModelTarget, ...], tuple[ProviderModelTarget, ...]]:
+        """Drop fallbacks whose context window is narrower than the model in use.
+
+        The whole conversation is replayed into every fallback candidate, so a smaller window
+        cannot receive it: rotation may keep or raise capacity, never lower it. An unknown
+        window is not read as zero — provider listings omit the field often enough that
+        treating unknown as tiny would silence fallbacks that work fine.
+        """
+
+        primary = candidates[0]
+        if len(candidates) == 1:
+            return candidates, ()
+        primary_context = self._context_window(primary)
+        if primary_context is None:
+            return candidates, ()
+
+        kept: list[ProviderModelTarget] = [primary]
+        dropped: list[ProviderModelTarget] = []
+        for target in candidates[1:]:
+            context = self._context_window(target)
+            if context is None or context >= primary_context:
+                kept.append(target)
+            else:
+                dropped.append(target)
+        for target in dropped:
+            trace_event(
+                stage="routing",
+                event="free_claude_code.model_fallback.context_skipped",
+                source="api",
+                request_id=request_id,
+                provider_id=target.provider_id,
+                provider_model=target.provider_model,
+                provider_model_ref=target.provider_model_ref,
+                context_window_tokens=self._context_window(target),
+                required_context_tokens=primary_context,
+            )
+        return tuple(kept), tuple(dropped)
+
     def _authorize(self, target: ProviderModelTarget):
         """Re-check one canonical pair immediately before its outbound call.
 
@@ -598,6 +645,12 @@ class ProviderExecutor:
             candidates = tuple(allowed)
             if not candidates:
                 raise TypeError("resolved route has no candidates")
+
+        # Context floor: a fallback may keep or raise the window the conversation was built
+        # against, never lower it.
+        candidates, context_dropped = self._context_safe_candidates(
+            candidates, request_id=request_id
+        )
         route_trace: dict[str, object] = {
             "stage": "routing",
             "event": "free_claude_code.api.route.resolved",
@@ -607,6 +660,7 @@ class ProviderExecutor:
             "provider_model": primary.provider_model,
             "provider_model_ref": primary.provider_model_ref,
             "fallback_count": len(resolved.fallbacks),
+            "fallback_context_dropped": len(context_dropped),
             "gateway_model": gateway_model,
             "reasoning_control": reasoning.control.value,
             "reasoning_effort": (

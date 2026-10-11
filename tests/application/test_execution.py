@@ -394,7 +394,10 @@ async def test_fallback_receives_its_own_cached_capability_in_stream(
         return providers[name]
 
     def lookup(provider_id, model_id):
-        assert provider_id in resolved
+        # The context floor reads a candidate's cached capacity before that candidate is
+        # opened, so a lookup may precede its resolution; it still must stay inside this
+        # request's own candidate set.
+        assert provider_id in providers
         return {
             "provider/provider-model": primary_info,
             "fallback/fallback-model": fallback_info,
@@ -1313,3 +1316,83 @@ async def test_cancelling_progress_wait_remains_cancellation() -> None:
 
     assert provider.stream_close_calls == 1
     assert resolved_ids == ["provider"]
+
+
+@pytest.mark.asyncio
+async def test_fallback_never_rotates_into_a_smaller_context_window() -> None:
+    narrow = _target("narrow", "narrow-model")
+    equal = _target("equal", "equal-model")
+    unknown = _target("unknown", "unknown-model")
+
+    providers = {
+        "provider": ControlledProvider(
+            [ExecutionFailure(FailureKind.PERMISSION, 402, "quota spent", False)]
+        ),
+        "narrow": ControlledProvider(["narrow served"]),
+        "equal": ControlledProvider(["equal served"]),
+        "unknown": ControlledProvider(["unknown served"]),
+    }
+    contexts = {
+        "provider/provider-model": 1_000_000,
+        "narrow/narrow-model": 200_000,
+        "equal/equal-model": 1_000_000,
+    }
+
+    def lookup(provider_id: str, model_id: str) -> ProviderModelInfo | None:
+        context = contexts.get(f"{provider_id}/{model_id}")
+        if context is None:
+            return None
+        return ProviderModelInfo(model_id, context_window_tokens=context)
+
+    executor = ProviderExecutor(
+        AsyncMock(side_effect=lambda provider_id: providers[provider_id]),
+        progress_timeout_seconds=10,
+        model_info_lookup=lookup,
+    )
+
+    events = [
+        event
+        async for event in executor.stream_messages(
+            _routed_request(narrow, equal, unknown),
+            raw_log_payload=dict,
+            request_id="req-context-floor",
+        )
+    ]
+
+    assert "equal served" in events
+    # A narrower window cannot receive the conversation; an unreported one is not read as tiny.
+    assert providers["narrow"].stream_calls == []
+    assert providers["unknown"].stream_calls == []
+
+
+@pytest.mark.asyncio
+async def test_context_floor_is_skipped_when_the_primary_window_is_unknown() -> None:
+    narrow = _target("narrow", "narrow-model")
+    providers = {
+        "provider": ControlledProvider(
+            [ExecutionFailure(FailureKind.PERMISSION, 402, "quota spent", False)]
+        ),
+        "narrow": ControlledProvider(["narrow served"]),
+    }
+
+    def lookup(provider_id: str, model_id: str) -> ProviderModelInfo | None:
+        if provider_id == "narrow":
+            return ProviderModelInfo(model_id, context_window_tokens=200_000)
+        return ProviderModelInfo(model_id)
+
+    executor = ProviderExecutor(
+        AsyncMock(side_effect=lambda provider_id: providers[provider_id]),
+        progress_timeout_seconds=10,
+        model_info_lookup=lookup,
+    )
+
+    events = [
+        event
+        async for event in executor.stream_messages(
+            _routed_request(narrow),
+            raw_log_payload=dict,
+            request_id="req-unknown-primary",
+        )
+    ]
+
+    assert "narrow served" in events

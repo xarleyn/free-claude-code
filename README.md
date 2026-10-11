@@ -357,6 +357,9 @@ Use the tag shown by `ollama list` with the `ollama/` prefix. `OLLAMA_BASE_URL` 
 <summary><strong>Optional model-tier routing</strong></summary>
 
 `MODEL` is the fallback for every request. Select a model for `MODEL_FABLE`, `MODEL_OPUS`, `MODEL_SONNET`, or `MODEL_HAIKU` to override an individual Claude Code tier. Select **None** to use `MODEL`.
+
+A fallback never lands in a smaller context window than the model it replaces. The conversation is replayed into every fallback, so a candidate whose reported window is narrower is skipped, and rotation only ever keeps or raises capacity. A model whose window the provider never reported is not treated as small: it stays eligible.
+
 </details>
 
 <details>
