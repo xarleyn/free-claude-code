@@ -12,6 +12,7 @@ import pytest
 import uvicorn
 from playwright.sync_api import Page
 
+from e2e.artifacts import failure_artifacts_recorder as failure_artifacts_recorder
 from e2e.code_support import CodeControl
 from e2e.server_shutdown import join_server
 from free_claude_code.api.app import create_app
@@ -391,3 +392,6 @@ def close_browser_connections_before_server_teardown(
     yield
     if not page.is_closed():
         page.goto("about:blank")
+        # Context disposal can otherwise leak an unfinished route.fetch() error
+        # into the next test's Playwright call.
+        page.unroute_all(behavior="ignoreErrors")
