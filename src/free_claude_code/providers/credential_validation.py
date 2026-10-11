@@ -15,6 +15,7 @@ import httpx
 from free_claude_code.config.provider_catalog import PROVIDER_CATALOG
 from free_claude_code.config.settings import Settings
 from free_claude_code.core.json_types import JsonValue
+from free_claude_code.providers.credentials import parse_credentials
 from free_claude_code.providers.runtime.config import string_setting
 
 REQUEST_TIMEOUT = 5.0
@@ -265,7 +266,11 @@ def _interpret(key: str, probe: _Probe, response: httpx.Response) -> CredentialC
 
 async def _check_one(settings: Settings, key: str, probe: _Probe) -> CredentialCheck:
     descriptor = PROVIDER_CATALOG[probe.provider_id]
-    credential = string_setting(settings, descriptor.credential_attr)
+    configured = string_setting(settings, descriptor.credential_attr)
+    # One setting can carry several accounts; the probe checks the first, because a pool is
+    # only as usable as its healthiest key and rotation covers the rest at call time.
+    credentials = parse_credentials(configured)
+    credential = credentials[0] if credentials else None
     if not credential:
         return _unverified(key, "No API key to verify.")
     base = (

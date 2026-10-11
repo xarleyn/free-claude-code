@@ -5,6 +5,7 @@ from free_claude_code.config.custom_providers import CustomProviderDefinition
 from free_claude_code.config.provider_catalog import ProviderDescriptor
 from free_claude_code.config.settings import Settings
 from free_claude_code.providers.base import ProviderConfig
+from free_claude_code.providers.credentials import parse_credentials
 
 
 def string_setting(settings: Settings, attr_name: str | None) -> str | None:
@@ -15,10 +16,33 @@ def string_setting(settings: Settings, attr_name: str | None) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def provider_credentials(
+    descriptor: ProviderDescriptor, settings: Settings
+) -> tuple[str, ...]:
+    """Every credential configured for one provider, in the operator's order.
+
+    Several accounts are written in the same setting, separated by commas or newlines, so a
+    spent quota on one key rotates to the next instead of failing the request.
+    """
+    raw = provider_credential_value(descriptor, settings)
+    if raw is None:
+        return ()
+    return parse_credentials(raw) or (raw,)
+
+
 def provider_credential(
     descriptor: ProviderDescriptor, settings: Settings
 ) -> str | None:
-    """Return the configured credential for a provider descriptor."""
+    """The credential to start on: the first configured account, if any."""
+
+    credentials = provider_credentials(descriptor, settings)
+    return credentials[0] if credentials else None
+
+
+def provider_credential_value(
+    descriptor: ProviderDescriptor, settings: Settings
+) -> str | None:
+    """The raw configured value for one provider descriptor."""
     if descriptor.static_credential is not None:
         return descriptor.static_credential
     if descriptor.credential_attr:
@@ -86,14 +110,17 @@ def build_provider_config(
         proxy=proxy,
         log_raw_sse_events=settings.log_raw_sse_events,
         log_api_error_tracebacks=settings.log_api_error_tracebacks,
+        api_keys=provider_credentials(descriptor, settings),
     )
 
 
 def build_custom_provider_config(
     definition: CustomProviderDefinition, settings: Settings
 ) -> ProviderConfig:
+    raw_key = definition.api_key.get_secret_value() if definition.api_key else None
+    keys = parse_credentials(raw_key)
     return ProviderConfig(
-        api_key=definition.api_key.get_secret_value() if definition.api_key else None,
+        api_key=keys[0] if keys else raw_key,
         base_url=definition.base_url,
         proxy=None,
         http_read_timeout=settings.http_read_timeout,
@@ -101,4 +128,5 @@ def build_custom_provider_config(
         http_connect_timeout=settings.http_connect_timeout,
         log_raw_sse_events=settings.log_raw_sse_events,
         log_api_error_tracebacks=settings.log_api_error_tracebacks,
+        api_keys=keys,
     )

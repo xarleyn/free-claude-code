@@ -61,6 +61,7 @@ class AnthropicProvider(BaseProvider):
     ) -> None:
         super().__init__(config)
         self._admission = admission
+        self._workspace_id = workspace_id
         self._snapshot = HttpEndpoint(
             base_url=config.base_url,
             api_key=config.api_key,
@@ -81,7 +82,20 @@ class AnthropicProvider(BaseProvider):
         self._model_lock = asyncio.Lock()
 
     async def endpoint(self, *, force_refresh: bool = False) -> HttpEndpoint:
-        return self._snapshot
+        """The snapshot for this attempt: the credential pool picks the account."""
+
+        del force_refresh
+        source = self._config.credential_source
+        if source is None:
+            return self._snapshot
+        api_key = await source()
+        if api_key == self._snapshot.api_key:
+            return self._snapshot
+        return HttpEndpoint(
+            base_url=self._config.base_url,
+            api_key=api_key,
+            headers=MappingProxyType(api_headers(api_key, self._workspace_id)),
+        )
 
     async def cleanup(self) -> None:
         await self._http.aclose()

@@ -361,6 +361,21 @@ Use the tag shown by `ollama list` with the `ollama/` prefix. `OLLAMA_BASE_URL` 
 </details>
 
 <details>
+<summary><strong>Several accounts for one provider</strong></summary>
+
+One provider setting can carry several keys, separated by commas or newlines:
+
+```bash
+OPENROUTER_API_KEY=sk-first,sk-second,sk-third
+```
+
+FCC starts on the first key and moves to the next one when that account, and not the request, is what failed: a rate limit (429), a spent wallet (402), or a rejected or forbidden key (401, 403). The spent key is set aside for as long as the upstream asked with `Retry-After`, or one minute by default, and the retry happens on the same model inside the same request, so the coding agent sees one answer instead of an error. A failure about the model or the payload does not burn the next account. When every key is cooling down, the shortest freeze is tried next and the normal model fallback applies.
+
+Keys stay in the order you wrote them, and a provider with one key behaves exactly as before. Admin shows the stored list as `********`; saving that mask keeps the keys, so retype the whole list to add or remove one.
+
+</details>
+
+<details>
 <summary><strong>Reasoning control</strong></summary>
 
 Open **Admin UI → Model Config → Reasoning** and select the behavior you want.

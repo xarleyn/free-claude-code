@@ -2,6 +2,7 @@
 
 import importlib
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 
 from free_claude_code.application.errors import (
     ApplicationUnavailableError,
@@ -23,6 +24,23 @@ from .config import build_provider_config
 ProviderFactory = Callable[
     [ProviderConfig, Settings, ProviderAdmissionController], BaseProvider
 ]
+
+
+def share_credentials(
+    config: ProviderConfig, admission: ProviderAdmissionController
+) -> ProviderConfig:
+    """Put one provider's credentials on its long-lived pool and hand clients that pool.
+
+    The pool outlives a settings generation, so a key set aside for a spent quota is not
+    resurrected by an unrelated Admin change. Clients ask it per request, which is what makes
+    a rotation invisible: the caller sees one attempt, not a fallback. One account is left
+    exactly as it was: a single baked key, no callable in its place.
+    """
+
+    admission.attach_credentials(config.api_keys)
+    if len(config.api_keys) < 2:
+        return config
+    return replace(config, credential_source=admission.credentials.credential)
 
 
 def _load_anthropic() -> ProviderFactory:
@@ -299,7 +317,9 @@ def prepare_provider(
             config = build_custom_provider_config(custom_definition, settings)
             admission = admission_registry.get(provider_id)
             return CustomProvider(
-                config, definition=custom_definition, admission=admission
+                share_credentials(config, admission),
+                definition=custom_definition,
+                admission=admission,
             )
 
         return construct_custom
@@ -320,6 +340,7 @@ def prepare_provider(
     ) -> BaseProvider:
         config = build_provider_config(descriptor, settings)
         admission = admission_registry.get(provider_id)
+        config = share_credentials(config, admission)
         if factory is not None:
             provider = factory(config, settings, admission)
             if (

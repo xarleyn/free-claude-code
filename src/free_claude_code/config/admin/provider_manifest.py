@@ -389,6 +389,12 @@ def _credential_field_specs() -> tuple[ConfigFieldSpec, ...]:
                         if provider.credential_env == descriptor.credential_env
                     ),
                     secret=True,
+                    description=(
+                        "One key, or several accounts separated by commas: when one "
+                        "runs out of quota, credits or acceptance, the next is tried "
+                        "before the model changes. Saving the mask keeps the stored "
+                        "keys, so retype the whole list to add or remove one."
+                    ),
                 )
             )
         )

@@ -47,6 +47,9 @@ _CONTEXT_WINDOW_EXCEEDED_MESSAGE = "Provider input exceeds the model context win
 _OVERLOADED_MESSAGE = "Provider is currently overloaded. Please retry."
 _CONTEXT_WINDOW_ERROR_CODE = "context_length_exceeded"
 _CONTEXT_WINDOW_FINISH_REASON = "model_context_window_exceeded"
+#: Answers that mean "this account cannot serve the call": acceptance, permission, a spent
+#: wallet, or this account's rate limit.
+_CREDENTIAL_EXHAUSTION_STATUSES = frozenset({401, 402, 403, 429})
 
 
 class ProviderRecoveryExhausted(RuntimeError):
@@ -126,6 +129,18 @@ def provider_authentication_status(exc: Exception) -> int | None:
     if any(code in ("permission_denied", "forbidden") for code in codes):
         return 403
     return None
+
+
+def credential_exhaustion_status(exc: BaseException) -> int | None:
+    """Return the status that says the credential, not the request, was refused.
+
+    401/403 are acceptance and permission, 402 is a spent wallet, 429 is this account's
+    rate limit. Any other answer is about the model or the payload, which every other
+    account would reject the same way, so it must not burn a second credential.
+    """
+
+    status = _reported_status(exc)
+    return status if status in _CREDENTIAL_EXHAUSTION_STATUSES else None
 
 
 def context_window_exceeded_provider_failure(

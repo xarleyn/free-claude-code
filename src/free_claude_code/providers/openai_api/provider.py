@@ -86,7 +86,7 @@ class OpenAIAPIProvider(BaseProvider):
         else:
             http_client = None
         self._client = AsyncOpenAI(
-            api_key=config.api_key,
+            api_key=config.credential_source or config.api_key,
             base_url=config.base_url,
             max_retries=0,
             timeout=timeout,

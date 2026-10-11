@@ -31,7 +31,7 @@ def create_chat_client(
     if config.proxy:
         http_client = DefaultAsyncHttpx2Client(proxy=config.proxy, timeout=timeout)
     return AsyncOpenAI(
-        api_key=api_key_provider or config.api_key,
+        api_key=api_key_provider or config.credential_source or config.api_key,
         base_url=base_url,
         max_retries=0,
         default_headers=default_headers,

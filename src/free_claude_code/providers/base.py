@@ -1,8 +1,8 @@
 """Base provider interface - extend this to implement your own provider."""
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Mapping
-from dataclasses import dataclass
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from dataclasses import dataclass, field
 
 from free_claude_code.application.errors import InvalidRequestError
 from free_claude_code.application.model_metadata import ProviderModelInfo
@@ -19,6 +19,10 @@ class ProviderConfig:
 
     Base fields apply to all providers. Provider-specific parameters
     (e.g. NIM temperature, top_p) are passed by the provider constructor.
+
+    `api_key` is the credential to start on. `api_keys` holds every configured credential
+    when the operator entered several, separated by commas or newlines; a single entry
+    means no rotation is possible.
     """
 
     api_key: str | None
@@ -29,6 +33,10 @@ class ProviderConfig:
     proxy: str | None
     log_raw_sse_events: bool
     log_api_error_tracebacks: bool
+    api_keys: tuple[str, ...] = ()
+    credential_source: Callable[[], Awaitable[str]] | None = field(
+        default=None, repr=False
+    )
 
 
 class BaseProvider(ABC):

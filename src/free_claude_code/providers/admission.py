@@ -6,7 +6,7 @@ import random
 import time
 import uuid
 from collections import deque
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -21,9 +21,11 @@ from free_claude_code.core.stream_delivery import (
 )
 from free_claude_code.core.trace import trace_event
 from free_claude_code.providers.admission_policy import ProviderAdmissionLimits
+from free_claude_code.providers.credentials import CredentialPool
 from free_claude_code.providers.failure_policy import (
     ProviderFailureOverride,
     ProviderRecoveryExhausted,
+    credential_exhaustion_status,
     is_retryable_provider_error,
     retryable_upstream_status,
 )
@@ -297,6 +299,7 @@ class ProviderAttempt:
         """Record a valid upstream response and close a recovery episode if probing."""
         if self._resolved or self._closed:
             return
+        self._controller._credentials.succeeded()
         await self._controller._attempt_accepted(self._execution, self._permit)
         self._resolve("accepted", accepted=True)
 
@@ -334,6 +337,15 @@ class ProviderAttempt:
         status = retryable_upstream_status(effective_error)
         retryable = is_retryable_provider_error(effective_error)
         self._execution._record_failure(error)
+        # Another account can answer right now. This is not a provider outage, so it must
+        # not enter the recovery episode: that backoff belongs to the credential that just
+        # ran out, and it would delay every other request as well.
+        if self._execution.can_attempt and (
+            await self._controller._rotate_credential(effective_error) is not None
+        ):
+            await self._controller._attempt_corrected(self._execution, self._permit)
+            self._resolve("credential_rotated", status=status, error=effective_error)
+            return ProviderFailureDecision(retryable=True, retry_allowed=True)
         if not retryable:
             await self._controller._attempt_rejected(self._execution, self._permit)
             self._execution.fail(error)
@@ -443,6 +455,7 @@ class ProviderAdmissionController:
             raise ValueError("jitter must be >= 0")
 
         self._provider_name = provider_name
+        self._credentials = CredentialPool.for_provider(provider_name, ())
         self._max_attempts = max_attempts
         self._base_delay = base_delay
         self._max_delay = max_delay
@@ -899,6 +912,33 @@ class ProviderAdmissionController:
         if limits != self._limits:
             self._limits = limits
             self._wake_capacity()
+
+    @property
+    def credentials(self) -> CredentialPool:
+        """The provider's credential pool; one object, so cooldowns outlive generations."""
+
+        return self._credentials
+
+    def attach_credentials(self, keys: Iterable[str]) -> None:
+        """Adopt the credentials configured for the generation being prepared."""
+
+        self._credentials.sync_keys(tuple(keys))
+
+    async def _rotate_credential(self, error: Exception) -> str | None:
+        """Set the spent credential aside and return the next key, or ``None``.
+
+        Only a failure about the credential rotates: a quota, a payment wall, or a key the
+        upstream no longer accepts. Anything else is about the model or the request, and a
+        second account would answer it the same way.
+        """
+
+        exhausted = credential_exhaustion_status(error)
+        if exhausted is None:
+            return None
+        return await self._credentials.rotate_to_next(
+            credential_exhausted=True,
+            retry_after_seconds=_retry_after_seconds(error),
+        )
 
     def _wake_capacity(self) -> None:
         changed = self._capacity_changed

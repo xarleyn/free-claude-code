@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from unittest.mock import patch
 
 import httpx
@@ -11,6 +12,7 @@ from openai import AsyncOpenAI
 
 from free_claude_code.config.settings import Settings
 from free_claude_code.providers.opencode import create_opencode_provider
+from free_claude_code.providers.runtime.factory import share_credentials
 from tests.api.support import create_test_app, provider_manager_for_app
 from tests.providers.support import immediate_admission, make_provider_config
 from tests.providers.test_opencode import (
@@ -36,7 +38,9 @@ def successful_response(request):
 
 
 @asynccontextmanager
-async def wire_client(provider_id="opencode_zen", handler=None):
+async def wire_client(
+    provider_id="opencode_zen", handler=None, api_keys: tuple[str, ...] = ()
+):
     requests = []
     catalog_requests = []
 
@@ -74,13 +78,18 @@ async def wire_client(provider_id="opencode_zen", handler=None):
     with patch(
         "free_claude_code.providers.openai_chat.client.AsyncOpenAI", side_effect=sdk
     ):
+        admission = immediate_admission(provider_name=provider_id)
+        config = make_provider_config(
+            api_key=api_keys[0] if api_keys else "test_opencode_key",
+            base_url="https://opencode.ai/zen/v1",
+        )
+        if len(api_keys) > 1:
+            config = replace(config, api_keys=api_keys)
+            config = share_credentials(config, admission)
         provider = create_opencode_provider(
             provider_id,
-            make_provider_config(
-                api_key="test_opencode_key",
-                base_url="https://opencode.ai/zen/v1",
-            ),
-            immediate_admission(provider_name=provider_id),
+            config,
+            admission,
             catalog_client=httpx.AsyncClient(transport=httpx.MockTransport(catalog)),
         )
     app = create_test_app(
@@ -374,3 +383,63 @@ async def test_concurrent_conversations_keep_their_session_ids_during_retry(
         assert response.status_code == 200, response.text
         assert requests[-1].headers.get_list("user-agent") == ["opencode"]
         assert provider._client.default_headers["User-Agent"] == "opencode"
+
+
+@pytest.mark.asyncio
+async def test_a_spent_account_retries_on_the_next_one_without_changing_model() -> None:
+    """Rotation is invisible: one model, one client-visible answer, two accounts tried."""
+
+    async def upstream(request):
+        auth = request.headers.get("authorization")
+        if auth == "Bearer k1":
+            return httpx2.Response(
+                429,
+                json={"error": {"type": "rate_limit", "message": "quota spent"}},
+            )
+        return successful_response(request)
+
+    async with wire_client(handler=upstream, api_keys=("k1", "k2")) as (
+        client,
+        _provider,
+        requests,
+        _catalogs,
+    ):
+        response = await client.post(
+            "/v1/messages",
+            json=payload("messages", "opencode_zen", "chat-selector"),
+            headers={"x-opencode-session": "conversation-1"},
+        )
+
+    assert response.status_code == 200, response.text
+    assert "hello" in response.text
+    assert [request.headers.get("authorization") for request in requests] == [
+        "Bearer k1",
+        "Bearer k2",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_single_account_never_reaches_a_second_credential() -> None:
+    async def upstream(request):
+        return httpx2.Response(
+            429,
+            json={"error": {"type": "rate_limit", "message": "quota spent"}},
+        )
+
+    async with wire_client(handler=upstream, api_keys=("only",)) as (
+        client,
+        _provider,
+        requests,
+        _catalogs,
+    ):
+        response = await client.post(
+            "/v1/messages",
+            json=payload("messages", "opencode_zen", "chat-selector"),
+            headers={"x-opencode-session": "conversation-1"},
+        )
+
+    assert response.status_code == 429
+    # One account is not a pool: the key never changes, whatever the transient retries do.
+    assert {request.headers.get("authorization") for request in requests} == {
+        "Bearer only"
+    }
