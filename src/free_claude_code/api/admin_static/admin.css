@@ -509,6 +509,12 @@ button.startup-busy::before,
   gap: 24px;
 }
 
+/* A grid item's automatic minimum size is its content's min-content width, so one wide
+   table would stretch the whole document instead of scrolling in its own container. */
+.form-sections > * {
+  min-width: 0;
+}
+
 .form-sections > .settings-section:last-child {
   margin-bottom: 0;
 }
