@@ -93,6 +93,8 @@ CHEAPERINFERENCE_DEFAULT_BASE = "https://api.cheaperinference.com/v1"
 ORCAROUTER_DEFAULT_BASE = "https://api.orcarouter.ai/v1"
 # Atlas Cloud OpenAI-compatible multi-provider gateway.
 ATLASCLOUD_DEFAULT_BASE = "https://api.atlascloud.ai/v1"
+# NeuroAPI OpenAI-compatible multi-provider gateway priced in rubles.
+NEUROAPI_DEFAULT_BASE = "https://neuroapi.host/v1"
 # xKiro OpenAI-compatible multi-provider gateway.
 XKIRO_DEFAULT_BASE = "https://api.xkiro.com/v1"
 # Opper OpenAI-compatible Chat Completions gateway.
@@ -755,6 +757,17 @@ PROVIDER_CATALOG: dict[str, ProviderDescriptor] = {
         credential_attr="atlascloud_api_key",
         default_base_url=ATLASCLOUD_DEFAULT_BASE,
         proxy_attr="atlascloud_proxy",
+    ),
+    "neuroapi": ProviderDescriptor(
+        provider_id="neuroapi",
+        display_name="NeuroAPI",
+        website_url="https://neuroapi.host/",
+        logo_filename="neuroapi.png",
+        credential_env="NEUROAPI_API_KEY",
+        credential_url="https://neuroapi.host/dashboard/tokens",
+        credential_attr="neuroapi_api_key",
+        default_base_url=NEUROAPI_DEFAULT_BASE,
+        proxy_attr="neuroapi_proxy",
     ),
     "xkiro": ProviderDescriptor(
         provider_id="xkiro",

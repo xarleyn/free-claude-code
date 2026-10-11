@@ -307,6 +307,14 @@ _PROVIDER_FIELD_OVERRIDES: dict[str, ProviderFieldOverride] = {
             "api.atlascloud.ai/v1; create one at console.atlascloud.ai/api-keys."
         ),
     },
+    "NEUROAPI_API_KEY": {
+        "label": "NeuroAPI API Key",
+        "description": (
+            "NeuroAPI OpenAI-compatible multi-provider gateway API key for "
+            "neuroapi.host/v1, billed in rubles. Create one at "
+            "neuroapi.host/dashboard/tokens."
+        ),
+    },
     "XKIRO_API_KEY": {
         "label": "xKiro API Key",
         "description": (

@@ -785,6 +785,21 @@ OPENAI_CHAT_PROFILES: dict[str, OpenAIChatProfile] = {
             max_output_tokens_path=("max_output_length",),
         ),
     ),
+    # NeuroAPI fronts many vendors behind one OpenAI-compatible contract billed in rubles.
+    # Its docs name Chat Completions and Responses as the stable formats and mark Anthropic
+    # Messages and Gemini GenerateContent as Beta, so only the Chat contract is used here.
+    # The published documentation lists no per-model reasoning vocabulary, and the model
+    # list carries only identifiers, so the efforts map onto the three names the OpenAI
+    # clients accept and the listing reports no capabilities it has not been shown.
+    "neuroapi": OpenAIChatProfile(
+        _policy(
+            "NEUROAPI",
+            ReasoningReplayMode.REASONING_CONTENT,
+            default_max_tokens=ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS,
+        ),
+        NamedEffortReasoning(_LOW_MEDIUM_HIGH, enabled_value="medium"),
+        model_listing=OpenAIModelListing(path="/models"),
+    ),
     "xkiro": OpenAIChatProfile(
         _policy(
             "XKIRO",
