@@ -238,3 +238,26 @@ def test_managed_claude_parser_returns_raw_for_non_object_json() -> None:
     )
 
     assert events == [{"type": "raw", "content": '"not an event"'}]
+
+
+def test_claude_launch_carries_its_session_and_client_name() -> None:
+    env = build_claude_proxy_env(
+        proxy_root_url="http://localhost:8082",
+        auth_token="proxy-token",
+        base_env={"ANTHROPIC_CUSTOM_HEADERS": "x-tenant: acme"},
+        launch_id="launch-a",
+    )
+
+    assert env["ANTHROPIC_CUSTOM_HEADERS"] == (
+        "x-tenant: acme\nx-fcc-launch-id: launch-a\nx-fcc-client-label: claude-code"
+    )
+
+
+def test_claude_proxy_env_without_a_launch_id_invents_no_identity() -> None:
+    env = build_claude_proxy_env(
+        proxy_root_url="http://localhost:8082",
+        auth_token="proxy-token",
+        base_env={},
+    )
+
+    assert "ANTHROPIC_CUSTOM_HEADERS" not in env

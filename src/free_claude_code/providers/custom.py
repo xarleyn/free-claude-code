@@ -18,6 +18,7 @@ from free_claude_code.core.reasoning import (
     ReasoningEffort,
     ReasoningPolicy,
 )
+from free_claude_code.core.request_identity import resolve_identity
 from free_claude_code.core.stream_recovery import ContinuationSeed
 from free_claude_code.providers.admission import (
     ProviderAdmissionController,
@@ -148,6 +149,9 @@ class CustomProvider(BaseProvider):
         else:
 
             async def credential() -> str:
+                source = config.credential_source
+                if source is not None:
+                    return await source()
                 return config.api_key or ""
 
             self._sdk = create_chat_client(
@@ -185,7 +189,16 @@ class CustomProvider(BaseProvider):
                 )
 
     async def endpoint(self, *, force_refresh: bool = False) -> HttpEndpoint:
-        return self._snapshot
+        """The snapshot for this attempt: the credential pool picks the account."""
+
+        del force_refresh
+        source = self._config.credential_source
+        if source is None:
+            return self._snapshot
+        api_key = await source()
+        if api_key == self._snapshot.api_key:
+            return self._snapshot
+        return HttpEndpoint(base_url=self._config.base_url, api_key=api_key, headers={})
 
     async def cleanup(self) -> None:
         if self._sdk is not None:
@@ -259,6 +272,7 @@ class CustomProvider(BaseProvider):
             response_model=response_model or request.model,
             reasoning=reasoning,
             model_info=model_info,
+            extra_headers=self._identity_headers(request_headers),
             continuation=continuation,
         )
 
@@ -312,7 +326,17 @@ class CustomProvider(BaseProvider):
             request_id=request_id,
             response_model=response_model or request.model,
             reasoning=reasoning,
+            extra_headers=self._identity_headers(request_headers),
             continuation=continuation,
+        )
+
+    def _identity_headers(
+        self, request_headers: Mapping[str, str] | None
+    ) -> Mapping[str, str]:
+        """Session and client name the caller carried, for upstreams that read them."""
+
+        return resolve_identity(request_headers or {}).headers_for(
+            self._definition.provider_id
         )
 
     async def list_model_infos(self) -> frozenset[ProviderModelInfo]:

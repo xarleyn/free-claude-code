@@ -18,6 +18,7 @@ def _configure(
             proxy_root_url=ctx.proxy_root_url,
             auth_token=ctx.auth_token,
             base_env=ctx.base_env,
+            launch_id=ctx.launch_id,
         ),
     )
 

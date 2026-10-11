@@ -16,6 +16,7 @@ from free_claude_code.core.reasoning import (
     DEFAULT_REASONING_POLICY,
     ReasoningPolicy,
 )
+from free_claude_code.core.request_identity import resolve_identity
 from free_claude_code.core.stream_recovery import ContinuationSeed
 from free_claude_code.providers.admission import (
     ProviderAdmissionController,
@@ -203,6 +204,13 @@ class OpenAIChatProvider(BaseProvider):
             collection_field=listing.collection_field,
         )
 
+    def _identity_headers(
+        self, request_headers: Mapping[str, str] | None
+    ) -> Mapping[str, str]:
+        """Session and client name the caller carried, for upstreams that read them."""
+
+        return resolve_identity(request_headers or {}).headers_for()
+
     def stream_messages(
         self,
         request: MessagesRequest,
@@ -223,6 +231,7 @@ class OpenAIChatProvider(BaseProvider):
             response_model=response_model,
             reasoning=reasoning,
             endpoint_context=endpoint_context,
+            extra_headers=self._identity_headers(request_headers),
             model_info=model_info,
             continuation=continuation,
         )
@@ -247,5 +256,6 @@ class OpenAIChatProvider(BaseProvider):
             response_model=response_model,
             reasoning=reasoning,
             endpoint_context=endpoint_context,
+            extra_headers=self._identity_headers(request_headers),
             continuation=continuation,
         )

@@ -15,6 +15,7 @@ from free_claude_code.core.openai_responses import (
     ResponsesToolPolicy,
 )
 from free_claude_code.core.reasoning import DEFAULT_REASONING_POLICY, ReasoningPolicy
+from free_claude_code.core.request_identity import resolve_identity
 from free_claude_code.core.stream_recovery import ContinuationSeed
 from free_claude_code.providers.admission import ProviderAdmissionController
 from free_claude_code.providers.base import BaseProvider, ProviderConfig
@@ -146,27 +147,19 @@ class OpenCodeProvider(BaseProvider):
     def _upstream_headers(
         self, request_headers: Mapping[str, str]
     ) -> Mapping[str, str]:
-        headers = {name.lower(): value for name, value in request_headers.items()}
-        upstream_headers = {}
-        user_agent = headers.get("user-agent")
+        """Headers OpenCode needs, bound to the session the caller carried."""
+
+        headers = dict(
+            resolve_identity(request_headers).headers_for(
+                self._opencode_profile.provider_id
+            )
+        )
+        user_agent = {
+            str(name).lower(): value for name, value in request_headers.items()
+        }.get("user-agent")
         if user_agent and user_agent.isascii() and user_agent.strip():
-            upstream_headers["User-Agent"] = user_agent
-        for name in (
-            "x-opencode-session",
-            "session-id",
-            "x-session-id",
-            "x-claude-code-session-id",
-            "session_id",
-            "x-grok-session-id",
-            "x-meta-ai-gateway-session-id",
-            "x-tbh-session-id",
-            "x-fcc-launch-id",
-        ):
-            session_id = headers.get(name)
-            if session_id and session_id.strip():
-                upstream_headers["x-opencode-session"] = session_id
-                break
-        return upstream_headers
+            headers["User-Agent"] = user_agent.strip()
+        return headers
 
     def stream_messages(
         self,
