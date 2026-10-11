@@ -36,14 +36,23 @@ def test_sessionless_request_is_forwarded_without_any_session() -> None:
     assert identity.headers_for("opencode_zen") == {}
 
 
-def test_unknown_provider_gets_the_canonical_names_only_when_the_caller_named_them() -> (
-    None
-):
+def test_a_catalog_provider_without_a_declared_spelling_is_shown_no_identity() -> None:
     identity = resolve_identity(
         {"session-id": "s-1", "x-fcc-client-label": "claude-code/desktop"}
     )
 
-    assert identity.headers_for("open_router") == {
+    assert identity.session_id == "s-1"
+    assert identity.client_name == "claude-code/desktop"
+    assert identity.headers_for("open_router") == {}
+    assert identity.headers_for(None) == {}
+
+
+def test_a_custom_provider_gets_the_canonical_names_the_caller_supplied() -> None:
+    identity = resolve_identity(
+        {"session-id": "s-1", "x-fcc-client-label": "claude-code/desktop"}
+    )
+
+    assert identity.headers_for("custom_" + "0" * 32) == {
         "x-session-id": "s-1",
         "x-client-name": "claude-code/desktop",
     }

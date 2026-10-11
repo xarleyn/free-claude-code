@@ -309,12 +309,15 @@ owns the header spellings; providers map them to what their upstream expects.
   `x-anthropic-session-id`, `claude-session-id`, `x-claude-session-id`.
 - Inbound client-name names: `x-fcc-client-label`, `x-client-name`, `x-fcc-client`, `x-client`,
   `x-app`.
-- Outbound: a provider with a declared spelling (`opencode_zen`, `opencode_go` →
-  `x-opencode-session`) gets exactly that header; every other upstream gets the canonical
-  `x-session-id` plus `x-client-name` when the caller named itself. Non-ASCII and over-long
-  values are dropped, and a caller that names nothing sends nothing.
+- Outbound is opt-in per provider. `opencode_zen` and `opencode_go` declare their spelling and get
+  exactly `x-opencode-session`; a custom provider (`custom_*`) gets the canonical `x-session-id`
+  plus `x-client-name` when the caller named itself. Every other catalog upstream gets nothing: an
+  upstream FCC does not configure is not ours to hand extra headers to, and the repository pins
+  that contract. Non-ASCII and over-long values are dropped, and a caller that names nothing sends
+  nothing.
 - Wiring: `providers/opencode` (which had its own private header list), `providers/openai_chat`
-  and `providers/custom`. The Chat and custom transports already accepted `extra_headers`; the
+  (asked by profile provider name, so a catalog id that opted out produces no header) and
+  `providers/custom`. The Chat and custom transports already accepted `extra_headers`; the
   providers were discarding `request_headers` before reaching them. The native Anthropic messages
   transport has no `extra_headers` channel and was left alone.
 - Launcher side: `fcc launch claude` now sets `ANTHROPIC_CUSTOM_HEADERS` with

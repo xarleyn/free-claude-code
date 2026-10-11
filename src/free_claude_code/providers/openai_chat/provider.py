@@ -209,7 +209,7 @@ class OpenAIChatProvider(BaseProvider):
     ) -> Mapping[str, str]:
         """Session and client name the caller carried, for upstreams that read them."""
 
-        return resolve_identity(request_headers or {}).headers_for()
+        return resolve_identity(request_headers or {}).headers_for(self._provider_name)
 
     def stream_messages(
         self,

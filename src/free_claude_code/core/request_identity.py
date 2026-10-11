@@ -9,8 +9,10 @@ Nothing here invents identity: a request that names no session reaches upstream 
 session. Binding one account's usage to a session its caller does not own is worse than
 the rejection.
 
-One module owns the header spellings, so a provider maps to whatever name its upstream
-expects instead of each keeping a private list.
+One module owns both the header spellings and the list of providers that are shown them,
+so an upstream receives a session only where its own integration is known rather than
+each provider keeping a private list, and a catalog upstream never gets a header it was
+not built for.
 """
 
 from collections.abc import Mapping
@@ -50,13 +52,28 @@ CLIENT_NAME_HEADERS: tuple[str, ...] = (
 SESSION_HEADER_OUT = "x-session-id"
 CLIENT_NAME_HEADER_OUT = "x-client-name"
 
-#: Per-provider outbound session spellings, on top of the canonical one.
+#: Providers that are shown the caller's identity, with the outbound session spelling
+#: each one reads. An upstream joins this map when its own header name is known; a
+#: provider that names no session header is sent none, because a catalog provider is not
+#: ours to hand unexpected headers to.
 PROVIDER_SESSION_HEADERS: Mapping[str, tuple[str, ...]] = {
     "opencode_zen": ("x-opencode-session",),
     "opencode_go": ("x-opencode-session",),
 }
 
+#: Custom providers are upstreams the user configured, so they get the canonical pair and
+#: any client that reads a session header can be pointed at them.
+CUSTOM_PROVIDER_PREFIX = "custom_"
+
 _MAX_VALUE_LENGTH = 256
+
+
+def sends_identity(provider_id: str) -> bool:
+    """Whether one provider is shown the session and client name the caller carried."""
+
+    return provider_id in PROVIDER_SESSION_HEADERS or provider_id.startswith(
+        CUSTOM_PROVIDER_PREFIX
+    )
 
 
 def _clean(value: object) -> str | None:
@@ -92,11 +109,15 @@ class RequestIdentity:
         """Outbound headers for one provider; absent values send nothing.
 
         A provider with a declared spelling gets exactly that one header, so an upstream
-        that names its session header is not also handed a generic copy of it. Everyone
-        else gets the canonical name.
+        that names its session header is not also handed a generic copy of it. A custom
+        provider gets the canonical pair. A catalog provider that was never opted in gets
+        nothing: forwarding an unexpected header to an upstream FCC does not own is a
+        change of contract made on its behalf.
         """
 
-        aliases = PROVIDER_SESSION_HEADERS.get(provider_id or ())
+        if provider_id is None or not sends_identity(provider_id):
+            return {}
+        aliases = PROVIDER_SESSION_HEADERS.get(provider_id)
         headers: dict[str, str] = {}
         if self.session_id:
             for name in aliases or (SESSION_HEADER_OUT,):
