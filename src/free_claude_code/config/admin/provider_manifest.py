@@ -315,6 +315,14 @@ _PROVIDER_FIELD_OVERRIDES: dict[str, ProviderFieldOverride] = {
             "neuroapi.host/dashboard/tokens."
         ),
     },
+    "NEURALDEEP_API_KEY": {
+        "label": "NeuralDeep Hub API Key",
+        "description": (
+            "NeuralDeep Hub OpenAI-compatible API key for api.neuraldeep.ru/v1, "
+            "hosted on Russian GPUs and billed in rubles. Create one at "
+            "hub.neuraldeep.ru/app/keys."
+        ),
+    },
     "XKIRO_API_KEY": {
         "label": "xKiro API Key",
         "description": (

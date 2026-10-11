@@ -101,6 +101,7 @@ PROVIDER_SMOKE_DEFAULT_MODELS: dict[str, str] = {
     "orcarouter": "orcarouter/deepseek/deepseek-v4-flash-free",
     "atlascloud": "atlascloud/deepseek-ai/deepseek-v4-flash",
     "neuroapi": "neuroapi/gpt-5-mini",
+    "neuraldeep": "neuraldeep/qwen3.6-35b-a3b",
     "xkiro": "xkiro/qwen/qwen3.7-flash:free",
     "agnes": "agnes/agnes-2.0-flash",
     "zenmux": "zenmux/deepseek/deepseek-v4-flash-free",

@@ -95,6 +95,8 @@ ORCAROUTER_DEFAULT_BASE = "https://api.orcarouter.ai/v1"
 ATLASCLOUD_DEFAULT_BASE = "https://api.atlascloud.ai/v1"
 # NeuroAPI OpenAI-compatible multi-provider gateway priced in rubles.
 NEUROAPI_DEFAULT_BASE = "https://neuroapi.host/v1"
+# NeuralDeep Hub OpenAI-compatible gateway hosted on Russian GPUs.
+NEURALDEEP_DEFAULT_BASE = "https://api.neuraldeep.ru/v1"
 # xKiro OpenAI-compatible multi-provider gateway.
 XKIRO_DEFAULT_BASE = "https://api.xkiro.com/v1"
 # Opper OpenAI-compatible Chat Completions gateway.
@@ -768,6 +770,17 @@ PROVIDER_CATALOG: dict[str, ProviderDescriptor] = {
         credential_attr="neuroapi_api_key",
         default_base_url=NEUROAPI_DEFAULT_BASE,
         proxy_attr="neuroapi_proxy",
+    ),
+    "neuraldeep": ProviderDescriptor(
+        provider_id="neuraldeep",
+        display_name="NeuralDeep Hub",
+        website_url="https://neuraldeep.ru/",
+        logo_filename="neuraldeep.png",
+        credential_env="NEURALDEEP_API_KEY",
+        credential_url="https://hub.neuraldeep.ru/app/keys",
+        credential_attr="neuraldeep_api_key",
+        default_base_url=NEURALDEEP_DEFAULT_BASE,
+        proxy_attr="neuraldeep_proxy",
     ),
     "xkiro": ProviderDescriptor(
         provider_id="xkiro",

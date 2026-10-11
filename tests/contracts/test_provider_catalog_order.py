@@ -62,6 +62,7 @@ _EXPECTED_PROVIDER_ORDER: tuple[str, ...] = (
     "orcarouter",
     "atlascloud",
     "neuroapi",
+    "neuraldeep",
     "xkiro",
     "opper",
     "ollama_cloud",

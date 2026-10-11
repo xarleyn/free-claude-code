@@ -36,6 +36,7 @@ The LLaMA.cpp icon comes from the upstream llama.cpp repository; its MIT license
 | `mistral-color.svg` | https://unpkg.com/@lobehub/icons-static-svg@1.95.0/icons/mistral-color.svg |
 | `nararoute.png` | https://router.bynara.id/logo_light.png |
 | `nebius.svg` | https://unpkg.com/@lobehub/icons-static-svg@1.95.0/icons/nebius.svg |
+| `neuraldeep.png` | https://neuraldeep.ru/apple-touch-icon.png |
 | `neuroapi.png` | https://neuroapi.host/apple-touch-icon.png |
 | `novita-color.svg` | https://unpkg.com/@lobehub/icons-static-svg@1.95.0/icons/novita-color.svg |
 | `nvidia-color.svg` | https://unpkg.com/@lobehub/icons-static-svg@1.95.0/icons/nvidia-color.svg |

@@ -27,6 +27,7 @@ from free_claude_code.config.provider_catalog import (
     LLM7_DEFAULT_BASE,
     MINIMAX_DEFAULT_BASE,
     NEBIUS_DEFAULT_BASE,
+    NEURALDEEP_DEFAULT_BASE,
     NEUROAPI_DEFAULT_BASE,
     OLLAMA_CLOUD_DEFAULT_BASE,
     OPPER_DEFAULT_BASE,
@@ -136,6 +137,7 @@ def _make_settings(**overrides):
     mock.atlascloud_api_key = "test_atlascloud_key"
     mock.xkiro_api_key = "test_xkiro_key"
     mock.neuroapi_api_key = "test_neuroapi_key"
+    mock.neuraldeep_api_key = "test_neuraldeep_key"
     mock.nvidia_nim_proxy = None
     mock.open_router_proxy = None
     mock.lmstudio_proxy = None
@@ -189,6 +191,7 @@ def _make_settings(**overrides):
     mock.atlascloud_proxy = None
     mock.xkiro_proxy = None
     mock.neuroapi_proxy = None
+    mock.neuraldeep_proxy = None
     mock.kilo_api_key = "test_kilo_key"
     mock.kilo_proxy = None
     mock.openai_proxy = None
@@ -478,6 +481,36 @@ async def test_neuroapi_provider_config_uses_key_base_and_proxy() -> None:
     assert descriptor.proxy_attr == "neuroapi_proxy"
     assert config.api_key == "neuroapi-token"
     assert config.base_url == NEUROAPI_DEFAULT_BASE
+    assert config.proxy == "http://proxy.test:8080"
+    assert isinstance(provider, OpenAIChatProvider)
+
+
+@pytest.mark.asyncio
+async def test_neuraldeep_provider_config_uses_key_base_and_proxy() -> None:
+    descriptor = PROVIDER_CATALOG["neuraldeep"]
+    settings = _make_settings(
+        neuraldeep_api_key="neuraldeep-token",
+        neuraldeep_base_url="https://unused.example/v1",
+        neuraldeep_proxy="http://proxy.test:8080",
+    )
+
+    config = build_provider_config(descriptor, settings)
+    with patch("free_claude_code.providers.openai_chat.client.AsyncOpenAI"):
+        provider = await create_provider(
+            "neuraldeep",
+            settings,
+            ProviderAdmissionRegistry(ProviderAdmissionLimits.from_settings(settings)),
+        )
+
+    assert descriptor.display_name == "NeuralDeep Hub"
+    assert descriptor.credential_env == "NEURALDEEP_API_KEY"
+    assert descriptor.credential_attr == "neuraldeep_api_key"
+    assert descriptor.credential_url == "https://hub.neuraldeep.ru/app/keys"
+    assert descriptor.default_base_url == NEURALDEEP_DEFAULT_BASE
+    assert descriptor.base_url_attr is None
+    assert descriptor.proxy_attr == "neuraldeep_proxy"
+    assert config.api_key == "neuraldeep-token"
+    assert config.base_url == NEURALDEEP_DEFAULT_BASE
     assert config.proxy == "http://proxy.test:8080"
     assert isinstance(provider, OpenAIChatProvider)
 
@@ -1240,6 +1273,7 @@ async def test_create_provider_instantiates_each_builtin():
         "orcarouter": OpenAIChatProvider,
         "atlascloud": OpenAIChatProvider,
         "neuroapi": OpenAIChatProvider,
+        "neuraldeep": OpenAIChatProvider,
         "xkiro": OpenAIChatProvider,
         "opencode_go": OpenCodeProvider,
         "vercel": OpenAIChatProvider,

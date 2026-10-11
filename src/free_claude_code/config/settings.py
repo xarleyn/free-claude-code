@@ -264,6 +264,11 @@ class Settings(BaseModel):
         default=None, validation_alias="NEUROAPI_API_KEY"
     )
 
+    # ==================== NeuralDeep Hub (OpenAI-compatible gateway) ====================
+    neuraldeep_api_key: OptionalNonEmptyString = Field(
+        default=None, validation_alias="NEURALDEEP_API_KEY"
+    )
+
     # ==================== Opper (OpenAI-compatible) ====================
     opper_api_key: OptionalNonEmptyString = Field(
         default=None, validation_alias="OPPER_API_KEY"
@@ -613,6 +618,9 @@ class Settings(BaseModel):
     )
     neuroapi_proxy: OptionalNonEmptyString = Field(
         default=None, validation_alias="NEUROAPI_PROXY"
+    )
+    neuraldeep_proxy: OptionalNonEmptyString = Field(
+        default=None, validation_alias="NEURALDEEP_PROXY"
     )
     opper_proxy: OptionalNonEmptyString = Field(
         default=None, validation_alias="OPPER_PROXY"

@@ -800,6 +800,28 @@ OPENAI_CHAT_PROFILES: dict[str, OpenAIChatProfile] = {
         NamedEffortReasoning(_LOW_MEDIUM_HIGH, enabled_value="medium"),
         model_listing=OpenAIModelListing(path="/models"),
     ),
+    # NeuralDeep Hub publishes its vocabulary per model: gpt-oss takes low / medium / high,
+    # qwen3.8 takes low / medium / xhigh and silently drops the values it does not know down
+    # to low, and qwen3.6 ignores the field entirely. low / medium / high is the only set
+    # every lane names, so efforts land there. Reasoning arrives as ``reasoning_content``
+    # and is on by default; the gateway ignores ``enable_thinking``, so thinking is stopped
+    # by choosing a ``-noreason`` model instead of by a request field.
+    "neuraldeep": OpenAIChatProfile(
+        _policy(
+            "NEURALDEEP",
+            ReasoningReplayMode.REASONING_CONTENT,
+            default_max_tokens=ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS,
+        ),
+        NamedEffortReasoning(_LOW_MEDIUM_HIGH, enabled_value="medium"),
+        model_listing=OpenAIModelListing(
+            path="/models",
+            # ``limit.context`` is the window this key may actually use: on a subscription
+            # key the tier caps it below the model's own size, and a request packed to the
+            # nominal window is answered with HTTP 400.
+            context_window_tokens_path=("limit", "context"),
+            max_output_tokens_path=("limit", "output"),
+        ),
+    ),
     "xkiro": OpenAIChatProfile(
         _policy(
             "XKIRO",
