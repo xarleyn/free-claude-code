@@ -1,6 +1,7 @@
 """Provider-prefixed model reference helpers."""
 
-from collections.abc import Mapping
+import fnmatch
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -26,6 +27,45 @@ def parse_model_fallbacks(value: object) -> object:
     if isinstance(value, list | tuple) and not value:
         return None
     return value
+
+
+def parse_model_allowlist(value: object) -> object:
+    """Parse a comma-separated catalog allowlist into casefolded glob patterns.
+
+    An empty value means "no filtering"; only the Admin/operator sets this, and the
+    catalog must stay open by default so existing configurations are unaffected.
+    """
+
+    if isinstance(value, str):
+        items: tuple[object, ...] = tuple(value.split(","))
+    elif isinstance(value, list | tuple):
+        items = tuple(value)
+    else:
+        return None
+    patterns = tuple(
+        str(item).strip().casefold() for item in items if str(item).strip()
+    )
+    return patterns or None
+
+
+def matches_model_allowlist(patterns: Sequence[str] | None, model_ref: str) -> bool:
+    """Whether one ``provider/model`` reference survives the catalog allowlist.
+
+    Patterns containing a slash match the whole reference. A bare pattern is tried
+    against the model part and against its last path segment, so ``claude-opus-5*``
+    covers both ``zai/claude-opus-5`` and ``open_router/anthropic/claude-opus-5.5``.
+    """
+
+    if not patterns:
+        return True
+    ref = model_ref.strip().casefold()
+    model_part = ref.partition("/")[2]
+    names = (ref, model_part, model_part.rpartition("/")[2])
+    for pattern in patterns:
+        probes = (ref,) if "/" in pattern else names
+        if any(fnmatch.fnmatchcase(probe, pattern) for probe in probes):
+            return True
+    return False
 
 
 def normalize_retired_model_settings(

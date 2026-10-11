@@ -117,6 +117,30 @@ def test_publisher_projects_the_application_catalog_without_compatibility_ids(
     ]
 
 
+def test_publisher_applies_the_model_allowlist(tmp_path: Path) -> None:
+    catalog_path = tmp_path / "codex-model-catalog.json"
+    runtime = FakeRequestRuntime(
+        settings=Settings().model_copy(
+            update={
+                "model": "nvidia_nim/configured",
+                "model_allowlist": ("open_router/keep*",),
+            }
+        ),
+        cached_infos=(
+            ProviderModelInfo("open_router/keep-me"),
+            ProviderModelInfo("open_router/drop-me"),
+            ProviderModelInfo("xkiro/keep-me-too"),
+        ),
+    )
+
+    CodexModelCatalogPublisher(catalog_path).publish(runtime)
+
+    assert _catalog_slugs(catalog_path) == [
+        "nvidia_nim/configured",
+        "open_router/keep-me",
+    ]
+
+
 def test_empty_projection_preserves_existing_catalog(tmp_path: Path) -> None:
     catalog_path = tmp_path / "codex-model-catalog.json"
     catalog_path.write_text("last known good\n", encoding="utf-8")

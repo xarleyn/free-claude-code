@@ -11,6 +11,7 @@ from free_claude_code.application.free_guard.models import FreeGuardMode
 from free_claude_code.application.free_guard.policy import free_guard_config
 from free_claude_code.application.model_catalog import (
     ModelCatalog,
+    apply_model_allowlist,
     context_window_for_client,
     read_model_catalog,
 )
@@ -189,8 +190,9 @@ def filter_catalog(
     *,
     guard: FreeGuardPort | None = None,
 ) -> ModelCatalog:
-    """Drop models the free-only policy has not cleared, when it is active."""
+    """Drop models the operator allowlist hides, then those the free policy cleared out."""
 
+    catalog = apply_model_allowlist(catalog, settings)
     mode = free_guard_config(settings).mode
     if mode is FreeGuardMode.OFF or guard is None:
         return catalog

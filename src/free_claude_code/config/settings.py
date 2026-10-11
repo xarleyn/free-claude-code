@@ -15,7 +15,7 @@ from pydantic import (
 from .constants import DEFAULT_MODEL, HTTP_CONNECT_TIMEOUT_DEFAULT
 from .custom_providers import CustomProviderDefinition, decode_custom_providers
 from .free_guard import FreeGuardMode, parse_free_guard_mode
-from .model_refs import parse_model_fallbacks
+from .model_refs import parse_model_allowlist, parse_model_fallbacks
 from .nim import NimSettings
 from .provider_catalog import (
     BEDROCK_DEFAULT_BASE,
@@ -41,6 +41,10 @@ OptionalNonEmptyString = Annotated[
 OptionalModelFallbacks = Annotated[
     tuple[NonEmptyString, ...] | None,
     BeforeValidator(parse_model_fallbacks),
+]
+OptionalModelAllowlist = Annotated[
+    tuple[NonEmptyString, ...] | None,
+    BeforeValidator(parse_model_allowlist),
 ]
 
 
@@ -449,6 +453,13 @@ class Settings(BaseModel):
     model_fallbacks: OptionalModelFallbacks = Field(
         default=None,
         validation_alias="MODEL_FALLBACKS",
+    )
+    # Comma-separated globs over ``provider/model`` references. Models that match no
+    # pattern are hidden from every client catalog; configured model references always
+    # stay visible so a mistyped pattern can never hide the model in use.
+    model_allowlist: OptionalModelAllowlist = Field(
+        default=None,
+        validation_alias="FCC_MODEL_ALLOWLIST",
     )
 
     # ==================== Per-Provider Proxy ====================

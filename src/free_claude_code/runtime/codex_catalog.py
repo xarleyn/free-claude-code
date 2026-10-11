@@ -5,7 +5,10 @@ import uuid
 from collections.abc import Mapping
 from pathlib import Path
 
-from free_claude_code.application.model_catalog import read_model_catalog
+from free_claude_code.application.model_catalog import (
+    apply_model_allowlist,
+    read_model_catalog,
+)
 from free_claude_code.application.ports import ModelCatalogPort
 from free_claude_code.config.paths import codex_model_catalog_path
 from free_claude_code.core.json_types import JsonValue
@@ -21,7 +24,7 @@ class CodexModelCatalogPublisher:
         self._catalog_path = catalog_path
 
     def publish(self, runtime: ModelCatalogPort) -> None:
-        """Publish the complete current application model inventory."""
+        """Publish the current application model inventory the allowlist leaves visible."""
 
         self._publish(runtime, self._resolved_catalog_path())
 
@@ -30,7 +33,11 @@ class CodexModelCatalogPublisher:
         runtime: ModelCatalogPort,
         catalog_path: Path,
     ) -> None:
-        catalog = build_codex_model_catalog(read_model_catalog(runtime).models)
+        settings = runtime.current_settings()
+        inventory = apply_model_allowlist(
+            read_model_catalog(runtime, settings), settings
+        )
+        catalog = build_codex_model_catalog(inventory.models)
         models = catalog.get("models")
         if not isinstance(models, list) or not models:
             raise ValueError("Codex model catalog contains no routable models.")

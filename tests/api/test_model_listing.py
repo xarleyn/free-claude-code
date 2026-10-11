@@ -18,6 +18,7 @@ def _settings(
     model_opus: str | None = "open_router/anthropic/claude-opus",
     model_haiku: str | None = "deepseek/deepseek-chat",
     model_fallbacks: tuple[str, ...] | None = None,
+    model_allowlist: tuple[str, ...] | None = None,
 ) -> Settings:
     return Settings.model_construct(
         model=model,
@@ -26,6 +27,7 @@ def _settings(
         model_sonnet=None,
         model_haiku=model_haiku,
         model_fallbacks=model_fallbacks,
+        model_allowlist=model_allowlist,
         proxy_auth_enabled=False,
         proxy_auth_token="freecc",
         deepseek_api_key="deepseek-key",
@@ -548,3 +550,78 @@ def test_real_json_catalog_agrees_with_application_identity_and_known_metadata(v
     expected = read_model_catalog(app.state.services.requests)
     payload = TestClient(app).get(f"/v1/models?view={view}").json()
     assert model_catalog_from_response(payload) == expected
+
+
+def test_model_allowlist_hides_unmatched_discovered_models():
+    settings = _settings(
+        model="deepseek/deepseek-chat",
+        model_opus=None,
+        model_haiku=None,
+        model_fallbacks=None,
+        model_allowlist=("glm-5*",),
+    )
+    app = create_test_app(settings)
+    manager = provider_manager_for_app(app)
+    manager.cache_model_infos(
+        "deepseek",
+        {ProviderModelInfo("glm-5.3"), ProviderModelInfo("junk-model")},
+    )
+    manager.cache_model_infos(
+        "open_router",
+        {
+            ProviderModelInfo("glm-5.2"),
+            ProviderModelInfo("z-ai/glm-5.3-flash"),
+            ProviderModelInfo("aion-labs/aion-3.5"),
+        },
+    )
+
+    payload = TestClient(app).get("/v1/models?view=messages").json()
+    refs = [row["provider_model_ref"] for row in payload["data"]]
+
+    assert refs == [
+        "deepseek/deepseek-chat",
+        "deepseek/glm-5.3",
+        "open_router/glm-5.2",
+        "open_router/z-ai/glm-5.3-flash",
+    ]
+
+
+def test_model_allowlist_keeps_configured_references_when_nothing_matches():
+    settings = _settings(
+        model="deepseek/deepseek-chat",
+        model_opus=None,
+        model_haiku=None,
+        model_fallbacks=None,
+        model_allowlist=("nothing-matches*",),
+    )
+    app = create_test_app(settings)
+    provider_manager_for_app(app).cache_model_infos(
+        "deepseek", {ProviderModelInfo("junk-model")}
+    )
+
+    payload = TestClient(app).get("/v1/models?view=messages").json()
+
+    assert [row["provider_model_ref"] for row in payload["data"]] == [
+        "deepseek/deepseek-chat"
+    ]
+
+
+def test_model_allowlist_slash_pattern_scopes_a_pattern_to_one_provider():
+    settings = _settings(
+        model="deepseek/deepseek-chat",
+        model_opus=None,
+        model_haiku=None,
+        model_fallbacks=None,
+        model_allowlist=("open_router/kimi-*",),
+    )
+    app = create_test_app(settings)
+    manager = provider_manager_for_app(app)
+    manager.cache_model_infos("open_router", {ProviderModelInfo("kimi-k3")})
+    manager.cache_model_infos("wafer", {ProviderModelInfo("kimi-k3")})
+
+    payload = TestClient(app).get("/v1/models?view=messages").json()
+
+    assert [row["provider_model_ref"] for row in payload["data"]] == [
+        "deepseek/deepseek-chat",
+        "open_router/kimi-k3",
+    ]

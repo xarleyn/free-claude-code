@@ -361,6 +361,20 @@ Use the tag shown by `ollama list` with the `ollama/` prefix. `OLLAMA_BASE_URL` 
 </details>
 
 <details>
+<summary><strong>Show only the models worth choosing</strong></summary>
+
+Provider catalogs advertise every model they know about, including superseded versions and entries no account can serve. `FCC_MODEL_ALLOWLIST` trims what every client is offered — Admin → Models → **Model Allowlist**, or:
+
+```sh
+# Comma-separated globs over `provider/model` references.
+FCC_MODEL_ALLOWLIST=open_router/anthropic/claude-opus-5*,glm-5*
+```
+
+A pattern containing `/` matches the whole reference; a bare pattern matches the model name, so `glm-5*` covers `zai/glm-5.3` and `open_router/z-ai/glm-5.3-flash` at once. Models named in `MODEL`, the tier overrides, and `MODEL_FALLBACKS` always stay visible, so a mistyped pattern cannot hide the model in use. Leaving it empty advertises every discovered model, as before. This hides choices only; blocking calls is FreeGuard's job.
+
+</details>
+
+<details>
 <summary><strong>Several accounts for one provider</strong></summary>
 
 One provider setting can carry several keys, separated by commas or newlines:

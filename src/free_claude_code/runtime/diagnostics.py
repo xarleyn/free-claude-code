@@ -71,6 +71,7 @@ ROUTING_FIELDS = (
     "model_sonnet",
     "model_haiku",
     "model_fallbacks",
+    "model_allowlist",
 )
 REASONING_FIELDS = (
     "reasoning_policy",

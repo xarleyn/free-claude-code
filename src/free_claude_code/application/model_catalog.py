@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from free_claude_code.config.constants import DEFAULT_MODEL_CONTEXT_TOKENS
 from free_claude_code.config.model_refs import (
     configured_chat_model_refs,
+    matches_model_allowlist,
     split_provider_model_ref,
 )
 from free_claude_code.core.gateway_model_ids import no_thinking_gateway_model_id
@@ -47,6 +48,29 @@ def context_window_for_client(model: CatalogModel) -> int:
     return (
         context if context is not None and context > 0 else DEFAULT_MODEL_CONTEXT_TOKENS
     )
+
+
+def apply_model_allowlist(catalog: ModelCatalog, settings: Settings) -> ModelCatalog:
+    """Hide discovered models the operator allowlist does not name.
+
+    References named in settings stay visible whatever the allowlist says: a mistyped
+    pattern must not be able to hide the model a client is already routing through. An
+    unset allowlist leaves the inventory untouched.
+    """
+
+    patterns = settings.model_allowlist
+    if not patterns:
+        return catalog
+    keep = {ref.model_ref for ref in configured_chat_model_refs(settings)}
+    visible = [
+        model
+        for model in catalog.models
+        if model.provider_model_ref in keep
+        or matches_model_allowlist(patterns, model.provider_model_ref)
+    ]
+    if len(visible) == len(catalog.models):
+        return catalog
+    return replace(catalog, models=tuple(visible))
 
 
 def model_order_key(provider_model_ref: str) -> tuple[str, str, str, str]:

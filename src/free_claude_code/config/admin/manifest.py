@@ -118,8 +118,7 @@ _FREE_GUARD_FIELDS: tuple[ConfigFieldSpec, ...] = (
         "boolean",
         settings_attr="free_guard_allow_local_models",
         description="Local inference produces no external bill.",
-    ),
-    ConfigFieldSpec(
+    ),    ConfigFieldSpec(
         "FCC_FREE_GUARD_ALLOW_MANUAL_APPROVAL",
         "Allow manual free attestation",
         "free_guard",
@@ -228,6 +227,21 @@ _NON_PROVIDER_FIELDS: tuple[ConfigFieldSpec, ...] = (
             "starts. Applies to every client. One request may reach multiple "
             "providers and consume usage at each. Native Anthropic Messages requests "
             "use only other Anthropic models as fallbacks."
+        ),
+    ),
+    ConfigFieldSpec(
+        "FCC_MODEL_ALLOWLIST",
+        "Model Allowlist",
+        "models",
+        "textarea",
+        settings_attr="model_allowlist",
+        advanced=True,
+        description=(
+            "Comma-separated globs over provider/model references, for example "
+            "``open_router/anthropic/claude-opus-5*, glm-5*``. Discovered models that "
+            "match nothing are hidden from client model lists; the models named in "
+            "Default Model, tier overrides and fallbacks always stay visible. Empty "
+            "shows every discovered model."
         ),
     ),
     ConfigFieldSpec(
