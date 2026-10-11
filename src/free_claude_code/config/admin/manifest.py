@@ -118,7 +118,41 @@ _FREE_GUARD_FIELDS: tuple[ConfigFieldSpec, ...] = (
         "boolean",
         settings_attr="free_guard_allow_local_models",
         description="Local inference produces no external bill.",
-    ),    ConfigFieldSpec(
+    ),
+    ConfigFieldSpec(
+        "FCC_FREE_GUARD_REQUIRE_NO_CARD",
+        "Require no saved card",
+        "free_guard",
+        "boolean",
+        settings_attr="free_guard_require_no_card",
+        description=(
+            "Treat a model as free only when its tier needs no card on file. "
+            "Unset accepts card-on-file trials."
+        ),
+    ),
+    ConfigFieldSpec(
+        "FCC_FREE_GUARD_REQUIRE_NO_TOPUP",
+        "Require no credit top-up",
+        "free_guard",
+        "boolean",
+        settings_attr="free_guard_require_no_topup",
+        description=(
+            "Treat a model as free only when calling it spends no purchased credits."
+        ),
+    ),
+    ConfigFieldSpec(
+        "FCC_FREE_GUARD_REQUIRE_NO_SUBSCRIPTION",
+        "Require no subscription",
+        "free_guard",
+        "boolean",
+        settings_attr="free_guard_require_no_subscription",
+        description=(
+            "Treat a model as free only when no paid plan is behind it. Unset lets a "
+            "plan you already pay for count as free, which is what OpenCode Go and "
+            "similar subscription-backed tiers are."
+        ),
+    ),
+    ConfigFieldSpec(
         "FCC_FREE_GUARD_ALLOW_MANUAL_APPROVAL",
         "Allow manual free attestation",
         "free_guard",

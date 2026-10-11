@@ -357,7 +357,6 @@ Use the tag shown by `ollama list` with the `ollama/` prefix. `OLLAMA_BASE_URL` 
 <summary><strong>Optional model-tier routing</strong></summary>
 
 `MODEL` is the fallback for every request. Select a model for `MODEL_FABLE`, `MODEL_OPUS`, `MODEL_SONNET`, or `MODEL_HAIKU` to override an individual Claude Code tier. Select **None** to use `MODEL`.
-
 </details>
 
 <details>
@@ -574,7 +573,7 @@ their catalog while still requiring a purchase on your account. That produces a
 confusing `429` / `insufficient_quota` error and, if retried automatically, a
 recurring charge. FreeGuard makes the distinction explicit.
 
-Turn it on in **Admin -> Model Config -> FreeGuard**, or with:
+Turn it on in **Admin -> Free Models -> FreeGuard**, or with:
 
 ```sh
 # off | catalog_filter_only | strict_free_only
